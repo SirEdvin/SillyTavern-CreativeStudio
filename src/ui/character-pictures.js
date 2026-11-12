@@ -1,6 +1,6 @@
 // One character-owned picture workspace, shared by both Pictures entry points.
 import { html, useState, useRef, useEffect, Button, Icon, TextArea, Select, Toggle, Section, Modal, pickFile, fileBytes, cx } from './kit.js';
-import { imageSettings, imageReady, familyOf, paint, paintSprites, paintFromPicture, installSprites } from '../st/comfy.js';
+import { imageSettings, referenceImageReady, familyOf, paint, paintSprites, paintFromPicture, installSprites } from '../st/comfy.js';
 import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, characterNegative, pictureInstruction, sizeFor } from '../core/comfy.js';
 import { useAiTask, AiStatus } from './ai.js';
 import { ImageSetup } from './image-setup.js';
@@ -12,6 +12,10 @@ import { pictureDraft, pictureTarget, selectCharacterAvatar } from '../core/pict
 import { navigateStudio } from './guide.js';
 import { DeletePictureButton } from './deletion.js';
 import { ensureCharacterPortrait } from './portrait.js';
+import { stContext } from '../st/env.js';
+import { captureScene } from '../core/scene.js';
+import { illustrateScene } from '../st/scene-illustration.js';
+import { generateNanoImage } from '../st/nanogpt.js';
 
 /**
  * Pictures for a character: the AI writes the prompts (in the style the checkpoint wants), ComfyUI (or SillyTavern's
@@ -37,6 +41,10 @@ export function CharacterPictures({ store, env, project, ch }) {
     const [setupOpen, setSetupOpen] = useState(false);
     const [result, setResult] = useState('');
     const [error, setError] = useState('');
+    const [sceneStatus, setSceneStatus] = useState('');
+    const [sceneResult, setSceneResult] = useState(null);
+    const [sceneGuidance, setSceneGuidance] = useState('');
+    const [, refreshChat] = useState(0);
     const [portraitLoading, setPortraitLoading] = useState(false);
     const [portraitError, setPortraitError] = useState('');
     const [portraitAttempt, setPortraitAttempt] = useState(0);
@@ -57,6 +65,17 @@ export function CharacterPictures({ store, env, project, ch }) {
     const [testExpression, setTestExpression] = useState('joy');
     const [mood, setMood] = useState('neutral');
     const stop = useRef(null);
+    const sceneStop = useRef(null);
+    useEffect(() => {
+        setSceneResult(null);
+        setSceneStatus('');
+        setSceneGuidance('');
+        const ctx = stContext();
+        const changed = () => { sceneStop.current?.abort(); refreshChat(value => value + 1); };
+        const types = [...new Set(['CHAT_CHANGED', 'MESSAGE_RECEIVED', 'MESSAGE_SENT', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED'].map(name => ctx.eventTypes?.[name]).filter(Boolean))];
+        for (const type of types) ctx.eventSource?.on?.(type, changed);
+        return () => { sceneStop.current?.abort(); for (const type of types) ctx.eventSource?.removeListener?.(type, changed); };
+    }, [ch.id, project.id]);
     const d = ch.card.data;
     const draft = pictureDraft(ch);
     const currentCharacter = () => pictureTarget(store.get(), project.id, ch.id);
@@ -66,8 +85,11 @@ export function CharacterPictures({ store, env, project, ch }) {
     }, `picture draft ${ch.id}`);
     let settings = null;
     let ready = false;
-    try { settings = imageSettings(); ready = imageReady(); } catch { /* no ST context */ }
+    try { settings = imageSettings(); ready = referenceImageReady(); } catch { /* no ST context */ }
     const comfy = settings?.backend === 'comfy';
+    const nano = settings?.backend === 'nanogpt';
+    let sceneProblem = '';
+    try { captureScene(stContext(), ch, { messages: settings?.sceneMessages }); } catch (e) { sceneProblem = e.message; }
     const family = settings ? familyOf(settings) : 'realistic';
     const promptStyle = FAMILIES[family]?.tags ? 'tags' : 'natural';
     const rating = imageRating(contentOf(project));
@@ -142,10 +164,25 @@ export function CharacterPictures({ store, env, project, ch }) {
         setError('');
         setBusy(key);
         try { await fn(); }
-        catch (e) { setError(e.message); env.toast(`Could not finish for ${d.name}: ${e.message}`, 'error', 8000); }
+        catch (e) { setError(e.message); if (key === 'scene') setSceneStatus(`Scene illustration stopped: ${e.message}`); env.toast(`Could not finish for ${d.name}: ${e.message}`, 'error', 8000); }
         finally { job.current = false; setBusy(''); setProgress(null); }
     };
     const paintAll = () => run('all', async () => { for (const pr of prompts) await paintOne(pr); });
+
+    const paintScene = () => run('scene', async () => {
+        setSceneResult(null);
+        const controller = new AbortController();
+        sceneStop.current = controller;
+        const selectedSettings = { ...imageSettings() };
+        try {
+            const generated = await illustrateScene({ store, env, projectId: project.id, characterId: ch.id,
+                signal: controller.signal, onStatus: setSceneStatus, messages: selectedSettings.sceneMessages,
+                guidance: sceneGuidance, generate: args => generateNanoImage({ ...args, settings: selectedSettings }),
+            });
+            setSceneResult(generated);
+            env.toast('Scene illustration saved. Your original avatar is unchanged.', 'ok');
+        } finally { if (sceneStop.current === controller) sceneStop.current = null; }
+    });
 
     const paintSpriteSet = labels => run('sprites', async () => {
         setExpressionError('');
@@ -219,7 +256,7 @@ export function CharacterPictures({ store, env, project, ch }) {
             ${!gallery.length && html`<p class="cs-muted">Your generated and uploaded pictures will appear here.</p>`}
             <div class="cs-gallery" role="group" aria-label=${`Choose avatar for ${d.name}`}>${[...gallery].reverse().map(m => html`<figure key=${m.id} class=${cx('cs-gallery-item', m.id === ch.avatarMediaId && 'is-avatar')}>
                 <label class="cs-avatar-choice" title=${m.prompt ?? m.name}>
-                    <input type="radio" name=${`avatar-${ch.id}`} value=${m.id} aria-label=${`Use ${m.name} as avatar`} checked=${m.id === ch.avatarMediaId} onChange=${() => chooseAvatar(m.id)} />
+                    <input type="radio" name=${`avatar-${ch.id}`} value=${m.id} aria-label=${`Use ${m.name} as avatar`} checked=${m.id === ch.avatarMediaId} disabled=${!!busy} onChange=${() => chooseAvatar(m.id)} />
                     <img src=${m.url} alt=${m.name} loading="lazy" />
                     <span>${m.id === ch.avatarMediaId ? '✓ Current avatar' : 'Choose as avatar'}</span>
                 </label>
@@ -230,6 +267,25 @@ export function CharacterPictures({ store, env, project, ch }) {
                 </figcaption>
             </figure>`)}</div>
         </${Section}>
+        <section class="cs-picture-compose" aria-label="Illustrate current scene">
+            <div class="cs-row"><h3>Illustrate current scene</h3><span class="cs-spacer"></span>
+                <${Button} small icon="plug" label="Image settings" onClick=${() => setSetupOpen(true)} disabled=${!!busy} />
+            </div>
+            <p class="cs-muted cs-small">One click: original portrait + recent chat → LLM scene direction → NanoGPT reference edit. Clothing, surroundings, position and framing can follow the story. The avatar stays unchanged; the result is saved in this character’s gallery.</p>
+            <details><summary>Optional visual direction</summary>
+                <${TextArea} label="Scene illustration guidance" value=${sceneGuidance} rows=${2} onChange=${setSceneGuidance} hint="Optional framing or style guidance. Leave empty to follow the conversation." />
+            </details>
+            <div class="cs-row">
+                <${Button} kind="primary" icon="image" label=${busy === 'scene' ? 'Illustrating current scene…' : 'Illustrate current scene'} onClick=${paintScene} disabled=${!!busy || ai.busy || portraitLoading || !avatarPic || !nano || !ready || !!sceneProblem} />
+                ${busy === 'scene' && html`<${Button} icon="stop" label="Cancel scene illustration" onClick=${() => sceneStop.current?.abort()} />`}
+            </div>
+            ${!nano ? html`<p class="cs-muted cs-small">Select NanoGPT in Image settings to enable this workflow.</p>` : !ready ? html`<p class="cs-warn-text cs-small">Configure your NanoGPT key and an image-editing model in Image settings.</p>` : sceneProblem ? html`<p class="cs-warn-text cs-small">${sceneProblem}</p>` : html`<p class="cs-muted cs-small">Uses up to ${settings.sceneMessages} recent visible messages. Clicking sends context to your creation LLM and makes one paid image request.</p>`}
+            ${sceneStatus && html`<p role="status" aria-live="polite" class="cs-small cs-muted">${sceneStatus}</p>`}
+            ${sceneResult && html`<figure class="cs-scene-result"><img src=${sceneResult.media.url} alt=${sceneResult.scene} />
+                <figcaption>${sceneResult.scene}</figcaption>
+                <details><summary>Generated editing instructions</summary><pre class="cs-pre">${sceneResult.instruction}</pre></details>
+            </figure>`}
+        </section>
         <section class="cs-picture-compose" aria-label="Create a picture">
             <div class="cs-row"><h3>Create a picture for ${d.name || 'this character'}</h3><span class="cs-spacer"></span>
                 <${Button} small icon="plug" label=${ready ? 'Image settings' : 'Set up image generation'} onClick=${() => setSetupOpen(true)} />
@@ -246,7 +302,7 @@ export function CharacterPictures({ store, env, project, ch }) {
             </div>
             <div class=${cx('cs-small', !ready ? 'cs-warn-text' : 'cs-muted')}>
                 ${!ready ? 'Set up an image generator to enable Generate picture.' : !draft.prompt.trim() ? 'Add a picture prompt above, or use Help write prompt.' : `Ready to generate for ${d.name}.`}
-                ${ready && html`<span> Using ${comfy ? `ComfyUI · ${String(settings.ckpt || settings.workflow?.name || 'custom workflow').replace(/\.(safetensors|ckpt|gguf)$/i, '')}` : 'SillyTavern Image Generation'}.</span>`}
+                ${ready && html`<span> Using ${nano ? `NanoGPT · ${settings.nanoModel}` : comfy ? `ComfyUI · ${String(settings.ckpt || settings.workflow?.name || 'custom workflow').replace(/\.(safetensors|ckpt|gguf)$/i, '')}` : 'SillyTavern Image Generation'}.</span>`}
             </div>
             ${busy === 'picture' && html`<div role="status" class="cs-muted">Generating for ${d.name}. This may take a minute…</div>`}
             ${result && html`<div role="status" class="cs-ok-text">${result}</div>`}

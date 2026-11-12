@@ -12,6 +12,10 @@ and the chosen portrait carried into card exports. Expression previews no longer
 set editable word minimums per field, and generate dialogue with varied speech, action and narration.
 **[Start here: the short guide](docs/QUICKSTART.md).** Advanced tools remain available when you need them.
 
+**This fork adds one-click NanoGPT scene illustration (1.3.0).** Open the same character's live chat and Studio **Pictures**, then press **Illustrate current scene**. Your creation LLM reads recent dialogue and writes editing instructions; NanoGPT receives those instructions and the character's selected portrait. Clothing, surroundings, pose and framing can change with the scene while the portrait anchors identity and style. The result appears in the gallery and preview; the avatar is never replaced. [Setup and limitations](#nanogpt-scene-illustration).
+
+Based on [rustyorb's Creative Studio](https://github.com/rustyorb/SillyTavern-CreativeStudio), under the same AGPL-3.0 license. Install this fork **instead of**, not alongside, another Creative Studio copy.
+
 <sub>Feature screenshots show earlier releases. Follow the <a href="#-start-here">current navigation guide</a> below.</sub>
 
 A SillyTavern extension for importing, writing and improving characters, with optional AI help.
@@ -23,7 +27,7 @@ You choose how much to build and what to change.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-220%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-node%3Atest-58b56b?style=for-the-badge&labelColor=1b1612)](docs/TESTING-SCENES.md)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -70,7 +74,7 @@ You need **SillyTavern 1.19.0 or newer**. No server plugin, no build step, no `n
 2. Click **Install extension** and paste this URL:
 
    ```
-   https://github.com/rustyorb/SillyTavern-CreativeStudio
+   https://github.com/SirEdvin/SillyTavern-CreativeStudio
    ```
 
 3. Pick *Install just for me* or *for all users*. SillyTavern downloads it and reloads.
@@ -89,7 +93,7 @@ SillyTavern connection or choose one in **AI setup** (see [Which AI?](#-which-ai
 
 ```bash
 cd SillyTavern/data/default-user/extensions
-git clone https://github.com/rustyorb/SillyTavern-CreativeStudio
+git clone https://github.com/SirEdvin/SillyTavern-CreativeStudio
 ```
 
 Use `public/scripts/extensions/third-party/` instead to install it for every user. Then reload SillyTavern.
@@ -115,6 +119,7 @@ details when you need them, then use **Export & use** to download a card or send
 | Upload a portrait or generate pictures | Open a character → **Pictures**. Write a **Picture prompt** (or use **Help write prompt**) and press **Generate picture**. **Upload portrait…** adds an existing image. |
 | Make expression sprites | **Pictures → Expressions — same character, different moods**. Check the reference portrait, choose a face adapter, then **Generate one expression** before making a set. Needs ComfyUI and adapter models. |
 | Set up an image generator | **AI setup → Images**; select ComfyUI or SillyTavern Image Generation |
+| Illustrate the current conversation from the character's portrait | **AI setup → Images → NanoGPT**, then the linked character's **Pictures → Illustrate current scene** |
 | Browse or clean up project images | **Pictures → Project picture library** shows every character's images; normal **Pictures** stays with the character you are working on |
 | Edit a lorebook | **World** |
 | Edit presets, regex or STscript | **Advanced tools → Writing presets**, **Text cleanup** (regex), or **Quick Replies** (includes STscript) |
@@ -272,6 +277,22 @@ A taste of the first message:
 > (…) *"So. Are you going to help me keep the light burning, Inspector, or are you just going to watch?"*
 
 <div align="center"><img src="docs/assets/divider.svg" width="520" alt="" /></div>
+
+## NanoGPT scene illustration
+
+One button illustrates the **current live conversation**, not only a fixed emotion. The original portrait anchors identity and drawing style; the scene can change clothes, surroundings, pose, expression and framing.
+
+1. Open a one-character SillyTavern chat. Bring that exact character into Studio with the character-panel feather or **Home → From SillyTavern**, then open **Pictures**. Its portrait must be loaded or selected.
+2. Under **AI setup → Images** (or **Image settings**) select **NanoGPT**. Set a **session-only API key** and an editing-capable model ID. **Load editing models** discovers supported models without spending image credits. Examples include `bytedance/seedream-v5.5`, `hidream-o1-image` and `hidream-o1-image-dev`; availability is controlled by NanoGPT.
+3. Choose **Auto** output resolution or a size advertised by the selected model. Choose how many recent visible messages to use (default 12, maximum 40; text is also character-bounded).
+4. Return to **Pictures** and click **Illustrate current scene**. Optional visual direction can specify framing or emphasis. The normal creation connection/profile supplies the text LLM, including a NanoGPT text connection if that is what you already use.
+5. The new image and its scene description appear in a preview and the character gallery. Expand **Generated editing instructions** to inspect the actual prompt. The avatar, card, chat messages and existing expressions are not replaced. This action does not insert the image into chat or update the Character Expressions sidebar.
+
+**Credentials and privacy:** session keys stay in memory only and must be re-entered after a full page reload. They are not saved in extension settings, projects, backups or exports. Optionally select an existing ST NanoGPT vault key by ID; retrieving it works only if the server already permits key exposure to extensions. Studio does **not** enable that setting or rotate active keys. The image API is called directly at `https://api.nano-gpt.com`; no server plugin is required. Browser/network policies must allow it. Portraits are re-encoded before upload to remove embedded character-card metadata. Your bounded card/chat context goes to the creation LLM; the prepared portrait and generated editing instruction go to NanoGPT.
+
+**Limits and cost:** one click submits at most one paid image-generation request; there are no automatic image retries. Structured LLM output may need a repair call. Cancellation stops waiting and prevents subsequent steps, but cannot guarantee a submitted provider job is cancelled or refunded. Image-input capability and supported resolutions are checked before generation. Missing/invalid portraits and unsupported models fail rather than falling back to text-to-image. Chat changes cancel the action and stale results are not attached. Group chats are not supported by this action. No model guarantees perfect identity retention, particularly when a close-up reference must become a full-body scene. Background-removal/expression-pack generation still uses ComfyUI.
+
+[Verification instructions](docs/TESTING-SCENES.md). Automated and browser integration tests use explicitly labeled service fixtures; they do not establish live model quality or account billing entitlements.
 
 ## ✦ Pictures, too
 
