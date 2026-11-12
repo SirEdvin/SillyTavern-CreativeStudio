@@ -40,6 +40,24 @@ test('one action loads the original portrait, runs the LLM, edits with its instr
     assert.equal(f.store.get().characters[0].avatarMediaId, 'original');
 });
 
+test('the final image instruction enforces user POV and keeps the user entirely unseen, even if LLM staging conflicts',async()=>{
+    const f=fixture();let sent;
+    const result=await f.run({runLlm:async(_ctx,args)=>{
+        assert.match(args.system,/first-person user POV/i);
+        return {value:{scene:'Mara hands the viewer an umbrella.',instruction:'Use the portrait as identity reference. Show Mara and the user from behind the user.'}};
+    },generate:async args=>{sent=args.instruction;return {bytes:f.png}}});
+    assert.match(sent,/first-person user POV/i);assert.match(sent,/user.*entirely off-screen/i);
+    assert.match(sent,/hands.*reflections.*shadows/i);assert.match(sent,/overrides conflicting/i);
+    assert.equal(result.instruction,sent);assert.equal(result.media.prompt,sent);assert.ok(sent.length<=12000);
+    assert.equal(f.store.get().characters[0].avatarMediaId,'original');
+});
+
+test('maximum valid LLM instructions still fit the image API bound with the fixed POV rule appended',async()=>{
+    const f=fixture();let length;
+    await f.run({runLlm:async()=>({value:{scene:'Platform',instruction:'x'.repeat(8000)}}),generate:async args=>{length=args.instruction.length;assert.match(args.instruction,/first-person user POV/);return {bytes:f.png}}});
+    assert.ok(length>8000&&length<=12000);
+});
+
 test('missing portrait or changed chat fails before a paid image request', async () => {
     const f = fixture();
     f.store.get().characters[0].avatarMediaId = '';

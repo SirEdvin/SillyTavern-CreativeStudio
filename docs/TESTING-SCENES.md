@@ -67,6 +67,8 @@ await window.runBrowserKeyTests({phase:'forgotten'})
 
 The key is an explicit fixture value, not a real credential. The account metadata fixture deliberately refuses writes; `/api/users/me` supplies the stable account identity across reloads. This covers closing/reloading before any native debounced settings save. These exercise the actual NanoGPT setup UI, reload restoration, provider readiness/use without a session key, and removal surviving another reload. `scenario:'bookkeeping'` exercises generation with local integrity/token fields absent from disk. Node key-store tests additionally cover account isolation, no raw key in server/account/extension metadata, and storage failure reporting.
 
+Scene-composition regressions verify first-person user POV in the default/overridden LLM prompt and the final outgoing image instruction, exclusion of the user/body/reflections/shadows, conflicting staging, exact persisted prompt and provider-length bounds. Browser payload checks cover both the headless More action and the Pictures preview. Fixtures cannot establish visual compliance by a live image model.
+
 ## Public API smoke check (no key, no generation charges)
 
 The real adapter's `nanoModels()` and `nanoModelMetadata(id)` functions can be called against NanoGPT to confirm public discovery, model-specific reference support and supported resolutions. Catalog aliases and endpoint availability can differ; manual IDs are supported but validated through endpoint metadata before generation.

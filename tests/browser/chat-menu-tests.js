@@ -45,6 +45,10 @@ window.runMoreMenuTests=async({scenario='existing'}={})=>{
         await waitFor(()=>document.querySelector('#fixture-message-1 img')?.naturalWidth>0&&!item.hasAttribute('aria-busy'));
         assert(calls.filter(c=>c.type==='image').length===1,'exactly one paid job despite double click');
         assert(calls.filter(c=>c.type==='llm').length===1,'exactly one scene LLM call');
+        const imagePrompt=calls.find(c=>c.type==='image').body.prompt;
+        assert(/first-person user POV/i.test(imagePrompt)&&/user entirely off-screen/i.test(imagePrompt),'final image request requires unseen-user POV');
+        assert(/hands.*reflections.*shadows/i.test(imagePrompt),'user body parts and indirect depictions excluded');
+        assert(/first-person user POV/i.test(JSON.stringify(calls.find(c=>c.type==='llm').args.prompt)),'scene LLM receives required POV');
         assert(!ctx.chat[2].extra,'image not attached to later user message');assert(ctx.chat.length===3,'no new chat message');
         assert(item.getAttribute('aria-disabled')==='true','action disabled after embed');
         item.click();item.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
