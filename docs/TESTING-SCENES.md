@@ -48,7 +48,24 @@ await window.runMoreMenuTests({scenario: 'existing'})
 
 These import the real extension entrypoint, headless runtime, scene pipeline, LLM gateway, NanoGPT adapter and canvas encoder. ST context/rendering, native chat endpoints, file storage and external provider responses are explicit fixtures. Tests assert that no Studio root is created, no project is activated, the correct character is imported only if absent, and exactly one generated image is attached to the latest character reply even when a later user message exists. The native media attachment is read back from the saved chat. Repeated clicks/keyboard activation after embedding do not call either model. An existing image blocks all model work. Missing configuration, provider errors and swallowed native save failures never report false success or trigger automatic paid retries.
 
-`tests/chat-scene*.test.js` additionally cover live/saved images, HTML/Markdown/legacy formats, message identity/swipes, stale edits, concurrent jobs, provider-preparation races and persistence failures. `tests/storage.test.js` covers non-activating background saves and revision rejection. Existing `tests/st-pull.test.js` and legacy handoff lifecycle tests retain import-concurrency/ownership coverage. Review regressions cover remote appended turns, non-target edits/metadata changes, and failed strict project-revision GETs causing zero uploads.
+`tests/chat-scene*.test.js` cover live/saved duplicate images, inline/legacy formats, message identity/swipes, changed visible dialogue, concurrent jobs, provider-preparation races and persistence failures. `tests/chat-bookkeeping.test.js` reproduces native integrity/cache differences within a single tab and verifies they no longer block. Whole-chat/metadata conflict equality was intentionally removed at user request. Strict background project revision GET-failure/zero-upload protections remain separately tested.
+
+## Persistent browser key verification
+
+Use the same harness with a full page reload between phases:
+
+```js
+await window.runBrowserKeyTests({phase:'save'})
+// Reload:
+await window.runBrowserKeyTests({phase:'restore'})
+await window.runMoreMenuTests({scenario:'saved-key'})
+// Reload:
+await window.runBrowserKeyTests({phase:'forget'})
+// Reload:
+await window.runBrowserKeyTests({phase:'forgotten'})
+```
+
+The key is an explicit fixture value, not a real credential. The account metadata fixture deliberately refuses writes; `/api/users/me` supplies the stable account identity across reloads. This covers closing/reloading before any native debounced settings save. These exercise the actual NanoGPT setup UI, reload restoration, provider readiness/use without a session key, and removal surviving another reload. `scenario:'bookkeeping'` exercises generation with local integrity/token fields absent from disk. Node key-store tests additionally cover account isolation, no raw key in server/account/extension metadata, and storage failure reporting.
 
 ## Public API smoke check (no key, no generation charges)
 

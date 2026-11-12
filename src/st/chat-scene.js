@@ -9,6 +9,7 @@ import { ensureCharacterPortrait } from '../ui/portrait.js';
 import { imageSettings, referenceImageReady } from './comfy.js';
 import { generateNanoImage } from './nanogpt.js';
 import { illustrateScene } from './scene-illustration.js';
+import { initNanoKeyStore } from './nano-key-store.js';
 let active=false;
 
 export async function illustrateChatMessage({target=captureChatTarget(),runtime,generate=generateNanoImage,runLlm,
@@ -24,6 +25,9 @@ export async function illustrateChatMessage({target=captureChatTarget(),runtime,
         guard();
         if(typeof ctx.saveChat!=='function'||typeof ctx.updateMessageBlock!=='function')throw new Error('SillyTavern message saving/rendering APIs are unavailable.');
         const settings={...imageSettings()};
+        if(settings.backend==='nanogpt'&&!settings.nanoSecretId&&!referenceImageReady()) {
+            await initNanoKeyStore(ctx);guard();
+        }
         if(settings.backend!=='nanogpt'||!referenceImageReady())throw new Error('Configure NanoGPT and its key in Creative Studio → Pictures → Image settings first. No image request was started.');
         await serverGuard(); // Fail before project creation or LLM work if a saved image already exists.
         const {store:visibleStore,env}=runtime??await getStudioRuntime();guard();

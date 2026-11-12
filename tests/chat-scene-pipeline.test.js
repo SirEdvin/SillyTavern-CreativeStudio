@@ -61,12 +61,10 @@ test('concurrent action is refused, and provider errors never retry or attach a 
     }finally{delete globalThis.SillyTavern}
     const g=fixture();try{await assert.rejects(g.run({generate:async()=>{g.calls.paid++;throw new Error('Provider failed')}}),/Provider failed/);assert.equal(g.calls.paid,1);assert.equal(g.ctx.chat[0].extra,undefined)}finally{delete globalThis.SillyTavern}
 });
-test('remote turns added after image generation are preserved and never overwritten by attachment',async()=>{
+test('local bookkeeping updates during LLM work do not cause a false cross-device error',async()=>{
     const f=fixture();try{
-        await assert.rejects(f.run({generate:async args=>{const image=await f.generate(args);f.saved().push({mes:'Remote new reply',is_user:false});return image}}),/saved chat changed/i);
-        assert.equal(f.saved().length,2);assert.equal(f.ctx.chat[0].extra,undefined);assert.equal(f.calls.paid,1);
-        assert.equal(f.store.get().media.length,2); // Paid output retained in gallery.
-        await assert.rejects(f.run(),/saved chat changed/i);assert.equal(f.calls.paid,1);
+        const result=await f.run({runLlm:async()=>{const r=await f.llm();f.ctx.chatMetadata={integrity:'native-local-id'};f.ctx.chat[0].extra={token_count:42};return r}});
+        assert.equal(f.calls.paid,1);assert.equal(f.saved()[0].extra.media[0].url,result.media.url);
     }finally{delete globalThis.SillyTavern}
 });
 test('unverified chat persistence reports failure but keeps the visible image and blocks a second payment',async()=>{

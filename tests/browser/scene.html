@@ -47,6 +47,7 @@ ctx.saveChat=async()=>{await fetch('/api/chats/save',{method:'POST',body:JSON.st
 window.SillyTavern={getContext:()=>({...ctx})};
 setNanoSessionKey('fixture-only-not-a-real-key',ctx);
 window.fetch=async(url,options={})=>{
+    if(String(url)==='/api/users/me')return Response.json({handle:'creative-studio-fixture-account'});
     if(String(url)==='/api/chats/get'){calls.push({type:'chat-read',body:JSON.parse(options.body)});return Response.json([{chat_metadata:{}},...savedChat]);}
     if(String(url)==='/api/chats/save'){calls.push({type:'chat-save'});if(mode!=='save-error')savedChat=JSON.parse(options.body).chat;return Response.json({});}
     if(String(url)==='/api/characters/export') {

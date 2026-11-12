@@ -1,18 +1,25 @@
 // NanoGPT setup keeps secrets out of settings and offers the provider's real editable-model catalog.
 import { html, useState, useEffect, Button, cx } from './kit.js';
 import { stContext } from '../st/env.js';
-import { nanoModels, nanoModelMetadata, nanoCanEdit, nanoResolutions, nanoStoredKeys, setNanoSessionKey, hasNanoSessionKey } from '../st/nanogpt.js';
+import { initNanoKeyStore } from '../st/nano-key-store.js';
+import { nanoModels, nanoModelMetadata, nanoCanEdit, nanoResolutions, nanoStoredKeys, saveNanoKey, forgetNanoKey, hasNanoKey } from '../st/nanogpt.js';
 
 export function NanoImageSetup({ s, set }) {
     const ctx = stContext();
     const [key, setKey] = useState('');
-    const [sessionReady, setSessionReady] = useState(() => hasNanoSessionKey(ctx));
+    const [keyReady, setKeyReady] = useState(() => hasNanoKey(ctx));
     const [models, setModels] = useState([]);
     const [keys, setKeys] = useState([]);
     const [metadata, setMetadata] = useState(null);
     const [status, setStatus] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    useEffect(() => {
+        let active = true;
+        initNanoKeyStore(ctx).then(() => { if (active) setKeyReady(hasNanoKey(ctx)); })
+            .catch(error => { if (active) setError(error.message); });
+        return () => { active = false; };
+    }, []);
     useEffect(() => {
         const controller = new AbortController();
         setMetadata(null);
@@ -34,25 +41,32 @@ export function NanoImageSetup({ s, set }) {
         try { setKeys(await nanoStoredKeys({ ctx })); setStatus('Loaded stored NanoGPT key labels.'); }
         catch (e) { setError(e.message); }
     };
-    const useKey = () => {
-        setNanoSessionKey(key, ctx); setSessionReady(hasNanoSessionKey(ctx)); setKey(''); set({ nanoSecretId: '' });
-        setStatus('Session key set in memory only. Re-enter it after a full page reload.');
+    const useKey = async () => {
+        try {
+            await saveNanoKey(key, ctx); setKeyReady(hasNanoKey(ctx)); setKey(''); set({ nanoSecretId: '' }); setError('');
+            setStatus('Key saved in this browser. It will be reused after reloading or reopening SillyTavern.');
+        } catch (error) { setError(error.message); }
+    };
+    const forgetKey = async () => {
+        try { await forgetNanoKey(ctx); setKeyReady(false); setError(''); setStatus('Browser key removed.'); }
+        catch (error) { setError(error.message); }
     };
     return html`<div class="cs-stack cs-nanogpt-setup">
         <p class="cs-muted cs-small">NanoGPT edits the character’s existing portrait. Scene illustration sends the portrait and LLM-written instructions to NanoGPT; recent chat text goes to your creation LLM. Each click makes a paid image request. Nothing runs automatically.</p>
-        <label class="cs-field"><span>Session-only NanoGPT API key</span>
-            <input type="password" class="text_pole cs-input" aria-label="Session-only NanoGPT API key" autocomplete="off" value=${key} onInput=${e => setKey(e.currentTarget.value)} placeholder=${sessionReady ? 'A key is already set for this page session' : 'Not stored in projects, exports or extension settings'} />
+        <label class="cs-field"><span>NanoGPT API key</span>
+            <input type="password" class="text_pole cs-input" aria-label="NanoGPT API key" autocomplete="off" value=${key} onInput=${e => setKey(e.currentTarget.value)} placeholder=${keyReady ? 'A key is ready; save a new key to replace it' : 'Saved in this browser, not in projects or exports'} />
         </label>
         <div class="cs-row">
-            <${Button} label="Use session key" onClick=${useKey} disabled=${!key.trim()} />
-            <${Button} small label="Forget session key" onClick=${() => { setNanoSessionKey('', ctx); setSessionReady(false); setStatus('Session key forgotten.'); }} disabled=${!sessionReady} />
-            <span class="cs-small cs-muted">${sessionReady ? 'Session key ready' : 'No session key'}</span>
+            <${Button} label="Save key" onClick=${useKey} disabled=${!key.trim()} />
+            <${Button} small label="Forget saved key" onClick=${forgetKey} disabled=${!keyReady} />
+            <span class="cs-small cs-muted">${keyReady ? 'Key ready' : 'No key saved'}</span>
         </div>
+        <p class="cs-muted cs-small">Keys are always saved in this browser for this SillyTavern account, separately from settings and exports. Site scripts/extensions can read browser storage; this is not an encrypted server vault. Other browsers/devices need their own key. Forget saved key removes it.</p>
         <details><summary>Use an existing SillyTavern vault key instead</summary>
-            <p class="cs-muted cs-small">Optional: only works when this server already allows API-key exposure to extensions. Studio does not enable exposure or rotate the active key. Prefer a session key if access is denied.</p>
+            <p class="cs-muted cs-small">Optional: only works when this server already allows API-key exposure to extensions. Studio does not enable exposure or rotate the active key. Use a browser-saved key if access is denied.</p>
             <${Button} small label="Load stored key labels" onClick=${loadKeys} />
             <label class="cs-field"><span>Stored NanoGPT key</span><select class="text_pole cs-input" aria-label="Stored NanoGPT key" value=${s.nanoSecretId} onChange=${e => set({ nanoSecretId: e.currentTarget.value })}>
-                <option value="">Use session key</option>
+                <option value="">Use browser-saved key</option>
                 ${s.nanoSecretId && !keys.some(k => k.id === s.nanoSecretId) && html`<option value=${s.nanoSecretId}>Saved key selection (load labels to inspect)</option>`}
                 ${keys.map(k => html`<option value=${k.id}>${k.label}${k.active ? ' (active)' : ''}</option>`)}
             </select></label>
