@@ -36,23 +36,19 @@ The harness mounts the **actual Preact Pictures component**, structured LLM gate
 
 The displayed reference/output are visibly labeled synthetic test images. They are **not** evidence of NanoGPT image quality. No credentials or external image requests are used by the harness. Bind the test server only to localhost; stop it when finished. `PORT` overrides the default port.
 
-## More-menu shortcut browser scenarios
+## Headless More-menu browser scenarios
 
-Use the same local harness. Reload the page before each scenario (the extension/app modules intentionally keep session state):
+Reload the same harness before each call:
 
 ```js
-await window.runMoreMenuTests({ scenario: 'existing' })
-// Reload, then:
-await window.runMoreMenuTests({ scenario: 'absent' })
-// Reload, then:
-await window.runMoreMenuTests({ scenario: 'elsewhere' })
-// Reload, then:
-await window.runMoreMenuTests({ scenario: 'timeout-retry' })
+await window.runMoreMenuTests({scenario: 'existing'})
+// Other scenarios, each after reloading:
+// absent, elsewhere, already-image, missing-key, provider-error, save-error
 ```
 
-These import the **real extension entrypoint and full Studio shell**, not just a menu callback stub. They verify that the native More menu gets one item after Continue, closes correctly, leaves Continue's handler intact, ignores duplicate clicks and supports keyboard activation. Each scenario automatically starts the actual scene pipeline without another Generate click. The absent case exports/imports the ST character exactly once; existing/current and existing/other-project cases reuse the character ID with no export, replacement or duplicate. Repeated shortcuts do not reimport it. Missing credentials open image settings without an image request, and unsupported group chats report an error without generation.
+These import the real extension entrypoint, headless runtime, scene pipeline, LLM gateway, NanoGPT adapter and canvas encoder. ST context/rendering, native chat endpoints, file storage and external provider responses are explicit fixtures. Tests assert that no Studio root is created, no project is activated, the correct character is imported only if absent, and exactly one generated image is attached to the latest character reply even when a later user message exists. The native media attachment is read back from the saved chat. Repeated clicks/keyboard activation after embedding do not call either model. An existing image blocks all model work. Missing configuration, provider errors and swallowed native save failures never report false success or trigger automatic paid retries.
 
-`tests/st-pull.test.js` additionally checks concurrent import deduplication, project-switch ownership, expired imports with no attachment, and timeout → retry sharing a single export. The `timeout-retry` browser scenario delays the actual fixture export, expires the opening handoff, retries, then releases the shared export and verifies exactly one character and one image job. `tests/scene-shortcut.test.js` checks single-claim handoff, stale chat rejection and timeout cleanup.
+`tests/chat-scene*.test.js` additionally cover live/saved images, HTML/Markdown/legacy formats, message identity/swipes, stale edits, concurrent jobs, provider-preparation races and persistence failures. `tests/storage.test.js` covers non-activating background saves and revision rejection. Existing `tests/st-pull.test.js` and legacy handoff lifecycle tests retain import-concurrency/ownership coverage. Review regressions cover remote appended turns, non-target edits/metadata changes, and failed strict project-revision GETs causing zero uploads.
 
 ## Public API smoke check (no key, no generation charges)
 

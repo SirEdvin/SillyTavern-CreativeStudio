@@ -24,6 +24,12 @@ function setup({ response = { data: [{ b64_json: 'iVBORw0KGgo=' }] }, metadata =
     return { calls, ctx, fetcher, run: options => generateNanoImage({ settings: { nanoModel: 'editor', nanoResolution: '1k' }, reference: png, instruction: 'Edit the reference into a rainy railway scene.', ctx, fetcher, prepare: async () => prepared, ...options }) };
 }
 
+test('asynchronous saved-message guard must finish successfully before any paid request', async () => {
+    const f=setup();let checked=false;
+    await assert.rejects(f.run({beforeSubmit:async()=>{await Promise.resolve();checked=true;throw new Error('Saved reply already has an image')}}),/already.*image/i);
+    assert.equal(checked,true);assert.equal(f.calls.filter(c=>c.url.endsWith('/images')).length,0);
+});
+
 test('discovery uses the public API and exposes actual image-input capability', async () => {
     const f = setup();
     const models = await nanoModels({ fetcher: f.fetcher });

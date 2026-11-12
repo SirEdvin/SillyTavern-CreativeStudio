@@ -1,7 +1,7 @@
 // Creative Studio — SillyTavern UI extension entry point.
 // Keeps startup cheap: registers the launcher and lazily imports the workbench on first open.
 import { addSceneMenuItem } from './src/ui/more-menu.js';
-import { createSceneShortcut } from './src/ui/scene-shortcut.js';
+import { captureChatTarget } from './src/st/chat-scene-target.js';
 
 const EXT_ID = 'creative-studio';
 const ROOT_ID = 'cs-root';
@@ -41,16 +41,16 @@ function toggleStudio() {
     else openStudio();
 }
 
-/** Chat → More → Illustrate current scene: open the right Pictures workspace and start it, no second click. */
+/** Chat-only illustration. Never mount or navigate Studio from this action. */
 function addSceneShortcut() {
-    addSceneMenuItem({ onRun: async () => {
-        const request = createSceneShortcut(); // Capture the clicked chat before any lazy loading/import.
-        try {
-            await openStudio('media');
-            if (request.state === 'finished') return await request.promise;
-            appModule.openStCharacter(request.snapshot.avatar, { sceneShortcut: request });
-            return await request.promise;
-        } catch (error) { request.fail(error); throw error; }
+    addSceneMenuItem({ getProblem: () => {
+        try { captureChatTarget(); return ''; } catch (error) { return error.message; }
+    }, onRun: async () => {
+        const target = captureChatTarget(); // Bind message/chat/swipe before lazy loading.
+        const { illustrateChatMessage } = await import('./src/st/chat-scene.js');
+        const result = await illustrateChatMessage({ target });
+        globalThis.toastr?.success?.('Scene image attached to the latest character message.', 'Creative Studio');
+        return result;
     } });
 }
 

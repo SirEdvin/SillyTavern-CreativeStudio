@@ -210,7 +210,7 @@ export async function generateNanoImage({ settings, reference, instruction, sign
     if (signal?.aborted) throw signal.reason ?? new Error('Cancelled');
     const body = { model: settings.nanoModel, prompt, n: 1, input_references: [prepared.dataUrl], ...(resolution ? { resolution } : {}) };
     if (new TextEncoder().encode(JSON.stringify(body)).length > 12 * 1024 * 1024) throw new Error('The prepared portrait is too large for this image request.');
-    beforeSubmit?.(); // Recheck ownership after all awaited preparation, immediately before spending credits.
+    await beforeSubmit?.(); // Recheck ownership (including async persisted-chat checks) immediately before spending credits.
     const data = await nanoRequest('/api/v1/images', { body, key, signal, fetcher });
     const bytes = await outputBytes(data, { signal, fetcher });
     if (signal?.aborted) throw signal.reason ?? new Error('Cancelled');
