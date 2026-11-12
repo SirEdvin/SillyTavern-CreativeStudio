@@ -11,6 +11,7 @@ import { uid } from '../core/bytes.js';
 import { saveMedia } from './media.js';
 
 const MAX_SHOWN = 150;
+const pulls = new WeakMap();
 
 /** Ask the studio shell to open the picker (from an area, the generator or the command palette). */
 export function openPullPicker() {
@@ -35,12 +36,41 @@ export function pulledSummary(r) {
  * A character already in the project is returned as it is, never duplicated.
  * @returns {Promise<{ character: object, existing?: boolean, lorebook: string, sprites: number, notes: string[] }>}
  */
-export async function pullStCharacter(store, env, avatar, { onStep = () => {} } = {}) {
-    const have = characterFromSt(store.get(), avatar);
-    if (have) return { character: have, existing: true, lorebook: '', sprites: 0, notes: [] };
+export function pullStCharacter(store, env, avatar, options = {}) {
+    const project = store.get();
+    const have = characterFromSt(project, avatar);
+    if (have) return Promise.resolve({ character: have, existing: true, lorebook: '', sprites: 0, notes: [] });
+    let pending = pulls.get(store);
+    if (!pending) pulls.set(store, pending = new Map());
+    const key = `${project.id}/${avatar}`;
+    const guard = options.guard ?? (() => true);
+    if (pending.has(key)) {
+        const entry = pending.get(key);
+        entry.guards.push(guard);
+        return entry.promise;
+    }
+    const entry = { guards: [guard], promise: null };
+    const assertWanted = () => {
+        if (!entry.guards.some(check => { try { return check() !== false; } catch { return false; } })) {
+            throw new Error('This character-opening request expired or was cancelled. No character was attached.');
+        }
+    };
+    const promise = pullCharacterIntoProject(store, env, avatar, project, { ...options, assertWanted }).finally(() => pending.delete(key));
+    entry.promise = promise;
+    pending.set(key, entry);
+    return promise;
+}
+
+async function pullCharacterIntoProject(store, env, avatar, project, { onStep = () => {}, assertWanted = () => {} } = {}) {
+    const assertProject = () => {
+        assertWanted();
+        if (store.get().id !== project.id) throw new Error('The project changed while importing the character. Nothing was attached to the new project.');
+    };
+    assertProject();
     const notes = [];
     onStep('Reading the card…');
     const png = await exportStCharacterPng(avatar);
+    assertProject();
     const imported = importCardFile(png, avatar);
     const name = imported.card.data.name;
     const at = new Date().toISOString();
@@ -49,7 +79,8 @@ export async function pullStCharacter(store, env, avatar, { onStep = () => {} } 
         origin: { kind: 'st', avatar, format: imported.format, diagnostics: imported.diagnostics, at },
     });
     const media = [];
-    const pic = await saveMedia(env, store.get(), png, { name: `${name} avatar`, role: 'avatar' });
+    const pic = await saveMedia(env, project, png, { name: `${name} avatar`, role: 'avatar' });
+    assertProject();
     media.push(pic);
     art.avatarMediaId = pic.media.id;
     art.links.media = [pic.media.id];
@@ -81,7 +112,7 @@ export async function pullStCharacter(store, env, avatar, { onStep = () => {} } 
             onStep(`Copying expression sprites… ${i + 1} of ${found.length}`);
             const res = await fetch(path);
             if (!res.ok) continue;
-            const m = await saveMedia(env, store.get(), new Uint8Array(await res.arrayBuffer()), { name: `${name} — ${label}`, role: 'sprite' });
+            const m = await saveMedia(env, project, new Uint8Array(await res.arrayBuffer()), { name: `${name} — ${label}`, role: 'sprite' });
             m.media.label = label;
             media.push(m);
             art.sprites[label] = m.media.id;
@@ -90,6 +121,9 @@ export async function pullStCharacter(store, env, avatar, { onStep = () => {} } 
         notes.push(`Its sprites could not be read: ${e.message}.`);
     }
 
+    assertProject();
+    const addedMeanwhile = characterFromSt(store.get(), avatar);
+    if (addedMeanwhile) return { character: addedMeanwhile, existing: true, lorebook: '', sprites: 0, notes: [] };
     store.update(p => {
         let n = media.reduce((acc, m) => m.apply(acc), p);
         if (lorebook) n = upsertArtifact(n, 'lorebooks', lorebook, { action: 'create', actor: 'import', summary: `Pulled lorebook ${worldName} from SillyTavern` });

@@ -36,6 +36,24 @@ The harness mounts the **actual Preact Pictures component**, structured LLM gate
 
 The displayed reference/output are visibly labeled synthetic test images. They are **not** evidence of NanoGPT image quality. No credentials or external image requests are used by the harness. Bind the test server only to localhost; stop it when finished. `PORT` overrides the default port.
 
+## More-menu shortcut browser scenarios
+
+Use the same local harness. Reload the page before each scenario (the extension/app modules intentionally keep session state):
+
+```js
+await window.runMoreMenuTests({ scenario: 'existing' })
+// Reload, then:
+await window.runMoreMenuTests({ scenario: 'absent' })
+// Reload, then:
+await window.runMoreMenuTests({ scenario: 'elsewhere' })
+// Reload, then:
+await window.runMoreMenuTests({ scenario: 'timeout-retry' })
+```
+
+These import the **real extension entrypoint and full Studio shell**, not just a menu callback stub. They verify that the native More menu gets one item after Continue, closes correctly, leaves Continue's handler intact, ignores duplicate clicks and supports keyboard activation. Each scenario automatically starts the actual scene pipeline without another Generate click. The absent case exports/imports the ST character exactly once; existing/current and existing/other-project cases reuse the character ID with no export, replacement or duplicate. Repeated shortcuts do not reimport it. Missing credentials open image settings without an image request, and unsupported group chats report an error without generation.
+
+`tests/st-pull.test.js` additionally checks concurrent import deduplication, project-switch ownership, expired imports with no attachment, and timeout → retry sharing a single export. The `timeout-retry` browser scenario delays the actual fixture export, expires the opening handoff, retries, then releases the shared export and verifies exactly one character and one image job. `tests/scene-shortcut.test.js` checks single-claim handoff, stale chat rejection and timeout cleanup.
+
 ## Public API smoke check (no key, no generation charges)
 
 The real adapter's `nanoModels()` and `nanoModelMetadata(id)` functions can be called against NanoGPT to confirm public discovery, model-specific reference support and supported resolutions. Catalog aliases and endpoint availability can differ; manual IDs are supported but validated through endpoint metadata before generation.

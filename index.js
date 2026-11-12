@@ -1,5 +1,7 @@
 // Creative Studio — SillyTavern UI extension entry point.
 // Keeps startup cheap: registers the launcher and lazily imports the workbench on first open.
+import { addSceneMenuItem } from './src/ui/more-menu.js';
+import { createSceneShortcut } from './src/ui/scene-shortcut.js';
 
 const EXT_ID = 'creative-studio';
 const ROOT_ID = 'cs-root';
@@ -37,6 +39,19 @@ function toggleStudio() {
     const root = document.getElementById(ROOT_ID);
     if (root?.classList.contains('cs-open')) closeStudio();
     else openStudio();
+}
+
+/** Chat → More → Illustrate current scene: open the right Pictures workspace and start it, no second click. */
+function addSceneShortcut() {
+    addSceneMenuItem({ onRun: async () => {
+        const request = createSceneShortcut(); // Capture the clicked chat before any lazy loading/import.
+        try {
+            await openStudio('media');
+            if (request.state === 'finished') return await request.promise;
+            appModule.openStCharacter(request.snapshot.avatar, { sceneShortcut: request });
+            return await request.promise;
+        } catch (error) { request.fail(error); throw error; }
+    } });
 }
 
 /**
@@ -141,11 +156,13 @@ document.addEventListener('keydown', e => {
 
 addLauncher();
 addCharacterButton();
+addSceneShortcut();
 registerCommand();
 // In case the top bar or the character panel is not built yet when the extension loads.
 globalThis.SillyTavern?.getContext?.().eventSource?.on?.('app_ready', () => {
     addLauncher();
     addCharacterButton();
+    addSceneShortcut();
 });
 
 globalThis.CreativeStudio = { open: openStudio, close: closeStudio, id: EXT_ID };
