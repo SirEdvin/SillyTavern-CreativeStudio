@@ -53,6 +53,18 @@ test('stale chat, character, and changed dialogue cannot be used for a later gen
     assert.throws(() => assertSceneCurrent(ctx, snapshot), /chat.*changed/i);
 });
 
+test('scene prompts require first-person user POV even with legacy prompt overrides or conflicting guidance', () => {
+    const {character,ctx}=fixture();
+    for(const overrides of [{},{'media.scene':'Legacy direction: show both participants in a third-person shot.'}]){
+        const prompt=buildTask('media.scene',{card:character.card,messages:captureScene(ctx,character).messages,guidance:'Show both participants from behind the user.'},{overrides});
+        assert.match(prompt.system,/first-person user POV/i);
+        assert.match(prompt.system,/character.*(?:visible|in frame)/i);
+        assert.match(prompt.system,/user.*(?:entirely off-screen|not visible)/i);
+        assert.match(prompt.system,/hands.*reflections.*shadows/i);
+        assert.match(prompt.system,/overrides conflicting/i);
+    }
+});
+
 test('scene task asks for identity-preserving instructions while allowing established clothes, pose and surroundings', () => {
     const { character, ctx } = fixture();
     const scene = captureScene(ctx, character);

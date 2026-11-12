@@ -282,7 +282,7 @@ function Studio({ store, env, initialRoute, onClose }) {
     return html`<div class="cs-studio" onKeyDown=${onKey} tabIndex="-1" role="application" aria-label="Creative Studio"
         onDragEnter=${onDragOver} onDragOver=${onDragOver} onDragLeave=${onDragLeave} onDrop=${onDrop}>
         <header class="cs-topbar">
-            <div class="cs-brand" title="Creative Studio 1.3.3"><${Icon} name="feather-pointed" /> Creative Studio <small class="cs-muted">1.3.3</small></div>
+            <div class="cs-brand" title="Creative Studio 1.3.4"><${Icon} name="feather-pointed" /> Creative Studio <small class="cs-muted">1.3.4</small></div>
             <${ProjectSwitcher} store=${store} env=${env} project=${project} />
             <div class="cs-spacer"></div>
             <div class="cs-topbar-right">

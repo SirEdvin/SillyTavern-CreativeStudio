@@ -96,6 +96,8 @@ window.runSceneTests=async()=>{
     const results=[];await waitFor(()=>button('Illustrate current scene')&&!button('Illustrate current scene').disabled);
     button('Illustrate current scene').click();await waitFor(()=>document.querySelector('.cs-scene-result img')?.naturalWidth>0);
     const request=calls.find(x=>x.type==='image');assert(request,'image API called');assert(calls.filter(x=>x.type==='llm').length===1,'one LLM call');
+    assert(/first-person user POV/i.test(request.body.prompt),'image request has fixed user POV');
+    assert(/first-person user POV/i.test(JSON.stringify(calls.find(x=>x.type==='llm').args.prompt)),'LLM receives fixed user POV');
     assert(request.body.input_references.length===1,'portrait attached');assert(request.body.prompt.includes('black coat'),'scene changes included');
     assert(!request.headers['X-CSRF-Token'],'local CSRF not leaked');
     const chunks=extractChunks(base64ToBytes(request.body.input_references[0].split(',')[1]));assert(!chunks.some(x=>x.name==='tEXt'),'card metadata removed');

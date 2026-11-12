@@ -1,5 +1,6 @@
 // One transaction-like user action: live scene -> LLM direction -> portrait edit -> owned gallery image.
 import { captureScene, assertSceneCurrent } from '../core/scene.js';
+import { SCENE_POV_RULE } from '../core/scene-composition.js';
 import { pictureTarget } from '../core/pictures.js';
 import { findArtifact } from '../core/project.js';
 import { contentOf } from '../core/content.js';
@@ -42,11 +43,13 @@ export async function illustrateScene({ store, env, projectId, characterId, ctx,
         maxTokens: task.maxTokens, profileId: project.settings?.creationProfileId ?? '', signal, onStatus });
     check();
     const description = typeof result?.value?.scene === 'string' ? result.value.scene.trim() : '';
-    const instruction = typeof result?.value?.instruction === 'string' ? result.value.instruction.trim() : '';
+    const rawInstruction = typeof result?.value?.instruction === 'string' ? result.value.instruction.trim() : '';
     // Structured repair can return partial values with schema warnings: never spend image credits on them.
-    if (!description || description.length > 3000 || !instruction || instruction.length > 8000) {
+    if (!description || description.length > 3000 || !rawInstruction || rawInstruction.length > 8000) {
         throw new Error('The LLM did not return a valid scene and editing instruction. No image request was sent.');
     }
+    // Keep the required composition in the actual image request even with old overrides or imperfect LLM output.
+    const instruction = `${rawInstruction}\n\n${SCENE_POV_RULE}`;
     onStatus('Editing the portrait into the current scene with NanoGPT…');
     const image = await generate({ reference: bytes, instruction, signal, beforeSubmit: check });
     check();
