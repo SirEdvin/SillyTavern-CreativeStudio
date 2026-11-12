@@ -17,10 +17,11 @@ test('all native, legacy and inline image forms block before generation',()=>{
         const ctx=context();Object.assign(ctx.chat[1],patch);assert.equal(hasEmbeddedImage(ctx.chat[1]),true);assert.throws(()=>captureChatTarget(ctx),/already.*image/i);
     }
 });
-test('the initial swipe may be unnumbered in saved greetings without implying a different reply',async()=>{
+test('saved duplicate-image protection applies only to the same message/swipe',async()=>{
     const ctx=context(),target=captureChatTarget(ctx),saved=structuredClone(ctx.chat);delete saved[1].swipe_id;
     await assertSavedTarget(target,{readChat:async()=>saved});
-    saved[1].swipe_id=1;await assert.rejects(assertSavedTarget(target,{readChat:async()=>saved}),/changed/i);
+    saved[1].extra={image:'/existing.png'};await assert.rejects(assertSavedTarget(target,{readChat:async()=>saved}),/already.*image/i);
+    saved[1].swipe_id=1;await assertSavedTarget(target,{readChat:async()=>saved});
 });
 test('an image added while preparing, replacement of the message, and new replies invalidate the target',()=>{
     for(const change of [c=>c.chat[1].extra={media:[{type:'image',url:'/a.png'}]},c=>c.chat[1]={...c.chat[1]},c=>c.chat.push({mes:'New reply'})]){
@@ -36,18 +37,10 @@ test('attaches as native message media, preserves text/user messages and verifie
     assert.deepEqual(ctx.chat[1].extra.media[0],{type:'image',url:media.url,title:'Rainy platform',source:'generated'});
     assert.equal(ctx.chat.length,4);assert.throws(()=>captureChatTarget(ctx),/already.*image/i);
 });
-test('remote appended turns, edits outside the target and metadata changes never get overwritten',async()=>{
-    for(const kind of ['append','edit','metadata']){
-        const ctx=context();ctx.chatMetadata={integrity:'same-slug',note:'original'};
-        const target=captureChatTarget(ctx),saved=structuredClone(ctx.chat),metadata={...ctx.chatMetadata};let saves=0;
-        ctx.saveChat=async()=>{saves++};ctx.updateMessageBlock=()=>{};
-        if(kind==='append')saved.push({mes:'New remote turn',is_user:false});
-        if(kind==='edit')saved[0].mes='Remote edit to an earlier message';
-        if(kind==='metadata')metadata.note='Remote metadata change';
-        await assert.rejects(attachChatImage({target,media:{url:'/user/files/scene.png'},getContext:()=>ctx,
-            readChat:async()=>[{chat_metadata:metadata},...saved]}),/saved chat changed/i);
-        assert.equal(saves,0);assert.equal(ctx.chat[1].extra,undefined);
-    }
+test('saved metadata, non-target edits and appended turns no longer trigger a whole-chat guard',async()=>{
+    const ctx=context();ctx.chatMetadata={integrity:'local'};const target=captureChatTarget(ctx),saved=structuredClone(ctx.chat);
+    saved[0].extra={token_count:99};saved.push({mes:'Extra saved turn',is_user:false});
+    await assertSavedTarget(target,{readChat:async()=>[{chat_metadata:{integrity:'other'}},...saved]});
 });
 test('a swallowed native save failure is not reported as persisted success',async()=>{
     const ctx=context(),target=captureChatTarget(ctx),old=structuredClone(ctx.chat);

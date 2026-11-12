@@ -1,6 +1,11 @@
 // Real extension/headless pipeline; ST context, persistence and remote providers are explicit TEST fixtures.
-import {render} from '/vendor/preact-htm.mjs';
-import {setNanoSessionKey} from '/src/st/nanogpt.js';
+import {render,html,useState} from '/vendor/preact-htm.mjs';
+import {setNanoSessionKey,hasNanoKey} from '/src/st/nanogpt.js';
+import {savedNanoKey,initNanoKeyStore} from '/src/st/nano-key-store.js';
+import {NanoImageSetup} from '/src/ui/nanogpt-setup.js';
+// Account settings are deliberately never persisted; the key scope comes from the stable /users/me identity.
+const accountState={};
+window.sceneHarness.ctx.accountStorage={getItem:()=>null,setItem(){throw new Error('Credential storage must not write account settings')}};
 const assert=(ok,message)=>{if(!ok)throw new Error(message)};
 const waitFor=async check=>{const until=Date.now()+15000;while(Date.now()<until){if(check())return;await new Promise(r=>setTimeout(r,25))}throw new Error('Timed out waiting for headless chat action')};
 window.runMoreMenuTests=async({scenario='existing'}={})=>{
@@ -18,6 +23,8 @@ window.runMoreMenuTests=async({scenario='existing'}={})=>{
     ctx.chat.push({is_user:true,name:'You',mes:'I offer her my umbrella.'});
     if(scenario==='already-image')ctx.chat[1].extra={media:[{type:'image',url:'/user/files/original.png'}]};
     h.setSavedChat(ctx.chat);h.setMode(scenario==='provider-error'?'provider-error':scenario==='save-error'?'save-error':'success');
+    if(scenario==='bookkeeping'){ctx.chatMetadata={integrity:'added-locally-by-native-getChat'};ctx.chat[1].extra={token_count:123};}
+    if(scenario==='saved-key')setNanoSessionKey('',ctx);
     if(scenario==='missing-key')setNanoSessionKey('',ctx);
     const chat=document.createElement('section');chat.id='fixture-chat';document.body.appendChild(chat);
     ctx.chat.forEach((m,i)=>{const article=document.createElement('article');article.id='fixture-message-'+i;article.textContent=m.name+': '+m.mes;chat.appendChild(article)});
@@ -60,4 +67,30 @@ window.runMoreMenuTests=async({scenario='existing'}={})=>{
     assert(document.querySelectorAll('#cs-option-illustrate-scene').length===1,'idempotent native item');
     const results=['PASS '+scenario+': actual More action runs without mounting/navigating Studio','PASS native menu placement and duplicate-click protection','PASS reply media/duplicate-image guard and persistence behavior for '+scenario];
     window.moreMenuResults=results;document.querySelector('#test-report').textContent=results.join('\n');return results;
+};
+
+window.runBrowserKeyTests=async({phase='save'}={})=>{
+    const {ctx}=window.sceneHarness;setNanoSessionKey('',ctx);
+    await initNanoKeyStore(ctx);
+    function Setup(){const[s,set]=useState(ctx.extensionSettings.creativeStudio.image);return html`<${NanoImageSetup} s=${s} set=${patch=>{Object.assign(ctx.extensionSettings.creativeStudio.image,patch);set({...s,...patch})}} />`}
+    render(html`<${Setup}/>`,document.querySelector('#root'));
+    const find=label=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===label);
+    await waitFor(()=>find('Save key'));
+    if(phase==='save'){
+        const input=document.querySelector('input[aria-label="NanoGPT API key"]');
+        input.value='fixture-browser-persistent-key';input.dispatchEvent(new Event('input',{bubbles:true}));
+        await waitFor(()=>!find('Save key').disabled);find('Save key').click();
+        await waitFor(()=>document.body.innerText.includes('Key saved in this browser.'));
+        assert(savedNanoKey(ctx)==='fixture-browser-persistent-key','key persisted');
+        assert(!JSON.stringify(ctx.extensionSettings).includes('fixture-browser-persistent-key'),'no secret in extension settings');
+        assert(!JSON.stringify(accountState).includes('fixture-browser-persistent-key'),'no secret in ST account settings');
+    }else if(phase==='restore'){
+        assert(hasNanoKey(ctx)&&savedNanoKey(ctx)==='fixture-browser-persistent-key','key restored after full navigation with no session key');
+        assert(!find('Forget saved key').disabled,'restored key visible to UI');
+    }else if(phase==='forget'){
+        assert(hasNanoKey(ctx),'key exists before deletion');find('Forget saved key').click();await waitFor(()=>!hasNanoKey(ctx));
+    }else if(phase==='forgotten'){
+        assert(!hasNanoKey(ctx),'forgotten key stays absent after reload');assert(find('Forget saved key').disabled,'UI reflects removed key');
+    }
+    return {passed:true,phase};
 };

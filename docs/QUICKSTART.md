@@ -11,15 +11,15 @@ Open Creative Studio with the feather in SillyTavern’s top bar, or **Ctrl+Shif
 
 AI generation uses the connection selected in **AI setup** and your provider’s normal usage terms. Importing, editing and exporting do not need an AI connection.
 
-## Illustrate the current chat with NanoGPT (1.3.2 fork)
+## Illustrate the current chat with NanoGPT (1.3.3 fork)
 
-After importing the active character through **From SillyTavern**, keep that character's chat open and go to **Pictures → Image settings → NanoGPT**. Enter a session-only key, choose an image-editing model (for example `bytedance/seedream-v5.5` or `hidream-o1-image`), and leave output resolution on **Auto** to use a supported size. Your existing creation text connection is used for scene analysis; it can also be NanoGPT.
+After importing the active character through **From SillyTavern**, keep that character's chat open and go to **Pictures → Image settings → NanoGPT**. Enter your key and press **Save key**, choose an image-editing model (for example `bytedance/seedream-v5.5` or `hidream-o1-image`), and leave output resolution on **Auto** to use a supported size. Your existing creation text connection is used for scene analysis; it can also be NanoGPT.
 
 After initial configuration, return to your normal chat and choose **More menu → Illustrate current scene** (after Continue). It creates or reuses the character/project in the background, uses the portrait and LLM-written scene instructions, and attaches the result to the latest visible character message. **It does not open Studio.** The button is disabled if that reply already has an image, including inline images. The original avatar and message text stay unchanged; no new chat message is created. Missing setup reports an error with no paid image request. The separate **Pictures → Illustrate current scene** button remains a gallery-only preview action, with optional visual direction.
 
 The default context is 12 messages (configurable up to 40, also text-bounded). The action currently supports one-character chats, and refuses a chat belonging to another character. Missing references and unsupported models never fall back to a fresh text-to-image person. In the Pictures preview, **Cancel scene illustration** stops further stages; the background chat action cancels when its chat/message changes. An image request already submitted may still be billed. There are no automatic image retries.
 
-Session keys are kept only in memory; re-enter after reloading the page. Stored ST keys are optional and only work if that server already permits API-key exposure to extensions; Studio does not enable it. Never run two copies of Creative Studio at once. See the [full setup and privacy notes](../README.md#nanogpt-scene-illustration).
+**Save key** stores the key for this ST account in this browser and reuses it after reload/restart. **Forget saved key** removes it; other devices/browsers need their own key. It is separate from projects/exports/settings, but same-site scripts/extensions can read browser storage—it is not an encrypted vault. Optional ST vault selection still requires API-key exposure already enabled on that server; Studio never enables it. The strict whole-chat/metadata comparison was removed in 1.3.3; native reply ownership and duplicate-image checks remain.
 
 ## Remix two characters (1.2.0)
 

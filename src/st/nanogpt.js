@@ -1,5 +1,7 @@
-// NanoGPT's normalized Image API. Raw credentials live only in memory (or ST's secret vault), never settings.
+// NanoGPT's normalized Image API. Credentials are browser-local (or ST vault), never project/settings fields.
 import { stContext } from './env.js';
+import { savedNanoKey, saveNanoKey, forgetSavedNanoKey, initNanoKeyStore } from './nano-key-store.js';
+export { saveNanoKey };
 import { bytesToBase64, base64ToBytes } from '../core/bytes.js';
 import { sniffImageMime } from '../ui/media.js';
 
@@ -16,6 +18,8 @@ export function setNanoSessionKey(value, ctx = stContext()) {
     if (key) sessionKeys.set(scope(ctx), key); else sessionKeys.delete(scope(ctx));
 }
 export const hasNanoSessionKey = (ctx = stContext()) => sessionKeys.has(scope(ctx));
+export const hasNanoKey = (ctx = stContext()) => !!savedNanoKey(ctx) || hasNanoSessionKey(ctx);
+export async function forgetNanoKey(ctx = stContext()) { await forgetSavedNanoKey(ctx); setNanoSessionKey('',ctx); }
 
 function deadline(signal, timeoutMs) {
     const controller = new AbortController();
@@ -117,7 +121,7 @@ async function localPost(ctx, path, body, fetcher = globalThis.fetch, signal) {
         if (request.signal.aborted) throw request.signal.reason;
         const response = await fetcher(path, { method: 'POST', headers: ctx.getRequestHeaders(), body: JSON.stringify(body), signal: request.signal });
         if (!response.ok) throw new Error(response.status === 403
-            ? 'This SillyTavern server does not allow reading stored API keys. Use a session-only key; no server setting was changed.'
+            ? 'This SillyTavern server does not allow reading stored API keys. Save a browser key instead; no server setting was changed.'
             : `SillyTavern secret access failed (HTTP ${response.status}).`);
         return await response.json();
     } catch (error) { if (request.signal.aborted) throw request.signal.reason; throw error; }
@@ -133,8 +137,9 @@ async function credential(settings, ctx, fetcher, signal) {
         if (typeof data.value !== 'string' || !data.value.trim()) throw new Error('The selected NanoGPT key is missing from the SillyTavern vault.');
         return data.value.trim();
     }
-    const key = sessionKeys.get(scope(ctx));
-    if (!key) throw new Error('Enter a NanoGPT session key in Image settings. It is never saved in project or extension settings.');
+    if (!hasNanoSessionKey(ctx)) await initNanoKeyStore(ctx, { fetcher });
+    const key = savedNanoKey(ctx) || sessionKeys.get(scope(ctx));
+    if (!key) throw new Error('Save a NanoGPT key in Image settings. It stays in this browser, not in project or extension settings.');
     return key;
 }
 

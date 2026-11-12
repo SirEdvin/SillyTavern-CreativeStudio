@@ -3,7 +3,7 @@
 
 import { stContext, stPost } from './env.js';
 import { scheduleSettingsBackup } from './studio-settings.js';
-import { generateNanoImage, hasNanoSessionKey } from './nanogpt.js';
+import { generateNanoImage, hasNanoKey } from './nanogpt.js';
 import {
     detectFamily, samplingFor, composePrompt, buildTxt2Img, buildExpression, spritePrompts, adoptWorkflow, sizeFor,
     randomSeed, spriteOptions, referenceSize, CUTOUTS, buildKontextExpression, buildKontextEdit, editInstruction, kontextModel, fluxVae,
@@ -14,7 +14,7 @@ export const IMAGE_DEFAULTS = {
     backend: '',            // '' (off) | 'comfy' | 'st' | 'nanogpt' (portrait-reference editing)
     nanoModel: 'bytedance/seedream-v5.5',
     nanoResolution: 'auto',
-    nanoSecretId: '',        // Only a vault ID; raw keys are session-only in nanogpt.js.
+    nanoSecretId: '',        // Only a vault ID; browser keys live separately from settings.
     sceneMessages: 12,
     url: 'http://127.0.0.1:8188',
     ckpt: '',
@@ -50,7 +50,7 @@ export function imageReady(ctx = stContext()) {
 /** Reference-only backends must not enable automatic text-to-image portrait generation. */
 export function referenceImageReady(ctx = stContext()) {
     const s = imageSettings(ctx);
-    return s.backend === 'nanogpt' ? !!s.nanoModel && (!!s.nanoSecretId || hasNanoSessionKey(ctx)) : imageReady(ctx);
+    return s.backend === 'nanogpt' ? !!s.nanoModel && (!!s.nanoSecretId || hasNanoKey(ctx)) : imageReady(ctx);
 }
 
 export function familyOf(s) {

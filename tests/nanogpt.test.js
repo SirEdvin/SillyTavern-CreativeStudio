@@ -16,6 +16,7 @@ function setup({ response = { data: [{ b64_json: 'iVBORw0KGgo=' }] }, metadata =
     setNanoSessionKey('session-secret', ctx);
     const fetcher = async (url, options = {}) => {
         calls.push({ url, options });
+        if (url === '/api/users/me') return json({ handle: 'fixture-account' });
         if (url.endsWith('/models')) return json({ data: [model, { id: 'text-only', architecture: { input_modalities: ['text'] } }] });
         if (url.endsWith('/endpoints')) return json(metadata);
         if (url.endsWith('/images')) return json(response);
@@ -144,7 +145,7 @@ test('vault-key denial is explicit, never rotates keys and never reaches the ima
     const f = setup();
     const seen = [];
     const fetcher = async (url, options) => { seen.push({ url, body: JSON.parse(options.body) }); return new Response('', { status: 403 }); };
-    await assert.rejects(f.run({ settings: { nanoModel: 'editor', nanoSecretId: 'stored-id' }, fetcher }), /session-only key/i);
+    await assert.rejects(f.run({ settings: { nanoModel: 'editor', nanoSecretId: 'stored-id' }, fetcher }), /browser key/i);
     assert.deepEqual(seen.map(c => c.url), ['/api/secrets/find']);
     assert.deepEqual(seen[0].body, { key: 'api_key_nanogpt', id: 'stored-id' });
 });
