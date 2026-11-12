@@ -11,6 +11,8 @@ import { StCharacterPicker, pullStCharacter, pulledSummary, characterFromSt, ope
 import { PromptSettings, ContentPill } from './prompt-settings.js';
 import { CARD_FILES, importAnyFile, openCardImport, dragDecision } from './importer.js';
 import { Guide } from './guide.js';
+import { queueSceneShortcut } from './scene-shortcut.js';
+import { assertSceneCurrent } from '../core/scene.js';
 
 /** A new project starts with the creation model chosen last time (if that profile still exists). */
 function withDefaultCreationModel(project) {
@@ -32,8 +34,9 @@ let pendingStCharacter = null;
  * "Open in Creative Studio" from SillyTavern's character panel: the studio opens that character, in the project
  * that already holds it if there is one, otherwise in a fresh project named after it.
  */
-export function openStCharacter(avatar) {
-    pendingStCharacter = avatar;
+export function openStCharacter(avatar, { sceneShortcut = null } = {}) {
+    pendingStCharacter?.sceneShortcut?.fail(new Error('Another character was opened before scene illustration could start.'));
+    pendingStCharacter = { avatar, sceneShortcut };
     globalThis.dispatchEvent(new CustomEvent('cs-open-st-character'));
 }
 
@@ -112,11 +115,15 @@ function Studio({ store, env, initialRoute, onClose }) {
         return () => globalThis.removeEventListener('cs-navigate', navigate);
     }, []);
     const previousProject = useRef(project.id);
+    const sceneProjectNavigation = useRef(null);
     useEffect(() => {
         if (previousProject.current === project.id) return;
         previousProject.current = project.id;
         setSelection(null);
-        setArea('project');
+        // A shortcut can load the character's existing project. Do not let this later reset effect
+        // overwrite its explicit Pictures destination with Home before the handoff is claimed.
+        setArea(sceneProjectNavigation.current === project.id ? 'media' : 'project');
+        sceneProjectNavigation.current = null;
         setLibraryOpen(false);
     }, [project.id]);
 
@@ -187,35 +194,65 @@ function Studio({ store, env, initialRoute, onClose }) {
         if (last) openCharacter(last);
     };
     useEffect(() => {
+        const openingShortcuts = new Set();
         const take = async () => {
-            const avatar = pendingStCharacter;
+            const request = pendingStCharacter;
             pendingStCharacter = null;
-            if (!avatar) return;
+            if (!request?.avatar) return;
+            const { avatar, sceneShortcut } = request;
+            if (sceneShortcut) openingShortcuts.add(sceneShortcut);
+            const assertRequest = () => {
+                if (!sceneShortcut) return;
+                if (sceneShortcut.state === 'finished') throw new Error('The scene shortcut expired or was cancelled before opening this character.');
+                assertSceneCurrent(globalThis.SillyTavern.getContext(), sceneShortcut.snapshot);
+            };
             try {
+                assertRequest();
                 const stChar = (globalThis.SillyTavern.getContext().characters ?? []).find(c => c.avatar === avatar);
                 const current = store.get();
                 let where = '';
                 if (!characterFromSt(current, avatar)) {
                     const home = (await env.storage.listProjects().catch(() => [])).find(x => (x.stAvatars ?? []).includes(avatar));
+                    assertRequest();
                     if (home && home.id !== current.id) {
                         await env.saveNow();
-                        store.reset(await env.storage.loadProject(home.id));
+                        const loaded = await env.storage.loadProject(home.id);
+                        assertRequest();
+                        if (sceneShortcut) sceneProjectNavigation.current = loaded.id;
+                        store.reset(loaded);
                         where = home.name;
                     } else if (!isEmptyProject(current)) {
                         await env.saveNow();
-                        store.reset(withDefaultCreationModel(createProject(stChar?.name ?? 'From SillyTavern')));
+                        assertRequest();
+                        const created = withDefaultCreationModel(createProject(stChar?.name ?? 'From SillyTavern'));
+                        if (sceneShortcut) sceneProjectNavigation.current = created.id;
+                        store.reset(created);
                     } else if (stChar?.name && /^(My first project|Untitled project)$/.test(current.name)) {
                         store.update(p => ({ ...p, name: stChar.name }), 'rename project');
                     }
                 }
-                showPulled(await pullStCharacter(store, env, avatar, { onStep: step => env.toast(step, '', 30000) }), where);
+                const pulled = await pullStCharacter(store, env, avatar, {
+                    onStep: step => env.toast(step, '', 30000),
+                    guard: () => { assertRequest(); return true; },
+                });
+                assertRequest();
+                showPulled(pulled, where);
+                if (sceneShortcut) {
+                    queueSceneShortcut(sceneShortcut, store.get().id, pulled.character.id, globalThis.SillyTavern.getContext());
+                    setArea('media');
+                    setSelection({ type: 'characters', id: pulled.character.id, tab: 'images' });
+                }
             } catch (e) {
+                sceneShortcut?.fail(e);
                 env.toast(`Could not open that character: ${e.message}`, 'error', 8000);
-            }
+            } finally { if (sceneShortcut) openingShortcuts.delete(sceneShortcut); }
         };
         take();
         globalThis.addEventListener('cs-open-st-character', take);
-        return () => globalThis.removeEventListener('cs-open-st-character', take);
+        return () => {
+            globalThis.removeEventListener('cs-open-st-character', take);
+            for (const shortcut of openingShortcuts) shortcut.fail(new Error('Studio closed before the character could be opened.'));
+        };
     }, []);
     useEffect(() => env.onToast(t => {
         setToast(t);
@@ -263,7 +300,7 @@ function Studio({ store, env, initialRoute, onClose }) {
     return html`<div class="cs-studio" onKeyDown=${onKey} tabIndex="-1" role="application" aria-label="Creative Studio"
         onDragEnter=${onDragOver} onDragOver=${onDragOver} onDragLeave=${onDragLeave} onDrop=${onDrop}>
         <header class="cs-topbar">
-            <div class="cs-brand" title="Creative Studio 1.2.1"><${Icon} name="feather-pointed" /> Creative Studio <small class="cs-muted">1.2.1</small></div>
+            <div class="cs-brand" title="Creative Studio 1.3.1"><${Icon} name="feather-pointed" /> Creative Studio <small class="cs-muted">1.3.1</small></div>
             <${ProjectSwitcher} store=${store} env=${env} project=${project} />
             <div class="cs-spacer"></div>
             <div class="cs-topbar-right">

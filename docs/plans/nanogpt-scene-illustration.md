@@ -47,4 +47,13 @@ Files: update `README.md`, `docs/QUICKSTART.md`, `manifest.json`, `package.json`
 3. Obtain independent code/security review and fix actionable findings.
 4. Commit/push to the authorized GitHub fork, read back the exact remote head, and provide an installable branch/repository URL. Do not install into the user's running SillyTavern or spend generation credits without separate approval.
 
+## Follow-up: chat More-menu shortcut
+
+Goal: add “Illustrate current scene” beside Continue/Regenerate in SillyTavern's existing `#options .options-content`, starting the same pipeline without another Generate click.
+
+1. Add a testable, in-memory scene-shortcut request/claim lifecycle with click-time chat ownership, duplicate prevention, timeout before the Pictures view claims it, and completion/error propagation.
+2. Register a keyboard-accessible native-style menu item in `index.js`; close through ST's own options toggle and lazily open Studio for the active character. Keep existing menu actions unchanged.
+3. Extend the existing character-opening path to select Pictures and hand off the request. The Pictures component auto-starts only after portrait loading and checks configuration/ownership; missing setup opens image settings instead of spending credits. Reuse cancellation, preview and gallery behavior.
+4. Add unit tests and extend the real browser harness with the native menu markup, one-click success, duplicate and stale-request checks. Run full tests/syntax/diff verification, update version/docs, publish through a fork-local PR.
+
 Acceptance: one click produces a scene illustration from the correct portrait and recent chat after initial configuration; scene can alter clothing, pose and environment while anchoring identity; no silent reference loss, avatar replacement, secret export, wrong-chat attachment or unsupported-mode fallback; tests and browser verification pass; fork contains actual installable changes.

@@ -13,9 +13,10 @@ import { navigateStudio } from './guide.js';
 import { DeletePictureButton } from './deletion.js';
 import { ensureCharacterPortrait } from './portrait.js';
 import { stContext } from '../st/env.js';
-import { captureScene } from '../core/scene.js';
+import { captureScene, assertSceneCurrent } from '../core/scene.js';
 import { illustrateScene } from '../st/scene-illustration.js';
 import { generateNanoImage } from '../st/nanogpt.js';
+import { takeSceneShortcut } from './scene-shortcut.js';
 
 /**
  * Pictures for a character: the AI writes the prompts (in the style the checkpoint wants), ComfyUI (or SillyTavern's
@@ -44,17 +45,19 @@ export function CharacterPictures({ store, env, project, ch }) {
     const [sceneStatus, setSceneStatus] = useState('');
     const [sceneResult, setSceneResult] = useState(null);
     const [sceneGuidance, setSceneGuidance] = useState('');
-    const [, refreshChat] = useState(0);
+    const [chatVersion, refreshChat] = useState(0);
     const [portraitLoading, setPortraitLoading] = useState(false);
+    const [portraitCheckedFor, setPortraitCheckedFor] = useState('');
     const [portraitError, setPortraitError] = useState('');
     const [portraitAttempt, setPortraitAttempt] = useState(0);
     useEffect(() => {
         let active = true;
         setPortraitLoading(true);
+        setPortraitCheckedFor('');
         setPortraitError('');
         ensureCharacterPortrait(store, env, project.id, ch.id, { retry: portraitAttempt > 0 })
             .catch(e => { if (active) setPortraitError(e.message); })
-            .finally(() => { if (active) setPortraitLoading(false); });
+            .finally(() => { if (active) { setPortraitLoading(false); setPortraitCheckedFor(`${project.id}/${ch.id}`); } });
         return () => { active = false; };
     }, [store, env, project.id, ch.id, portraitAttempt]);
     const job = useRef(false);
@@ -74,7 +77,9 @@ export function CharacterPictures({ store, env, project, ch }) {
         const changed = () => { sceneStop.current?.abort(); refreshChat(value => value + 1); };
         const types = [...new Set(['CHAT_CHANGED', 'MESSAGE_RECEIVED', 'MESSAGE_SENT', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED'].map(name => ctx.eventTypes?.[name]).filter(Boolean))];
         for (const type of types) ctx.eventSource?.on?.(type, changed);
-        return () => { sceneStop.current?.abort(); for (const type of types) ctx.eventSource?.removeListener?.(type, changed); };
+        const requested = () => refreshChat(value => value + 1);
+        globalThis.addEventListener('cs-scene-shortcut', requested);
+        return () => { sceneStop.current?.abort(); globalThis.removeEventListener('cs-scene-shortcut', requested); for (const type of types) ctx.eventSource?.removeListener?.(type, changed); };
     }, [ch.id, project.id]);
     const d = ch.card.data;
     const draft = pictureDraft(ch);
@@ -169,20 +174,41 @@ export function CharacterPictures({ store, env, project, ch }) {
     };
     const paintAll = () => run('all', async () => { for (const pr of prompts) await paintOne(pr); });
 
-    const paintScene = () => run('scene', async () => {
+    const paintScene = (shortcut = null) => run('scene', async () => {
         setSceneResult(null);
         const controller = new AbortController();
         sceneStop.current = controller;
-        const selectedSettings = { ...imageSettings() };
         try {
+            if (shortcut) assertSceneCurrent(stContext(), shortcut.snapshot);
+            const selectedSettings = { ...imageSettings() };
             const generated = await illustrateScene({ store, env, projectId: project.id, characterId: ch.id,
                 signal: controller.signal, onStatus: setSceneStatus, messages: selectedSettings.sceneMessages,
                 guidance: sceneGuidance, generate: args => generateNanoImage({ ...args, settings: selectedSettings }),
             });
             setSceneResult(generated);
             env.toast('Scene illustration saved. Your original avatar is unchanged.', 'ok');
+            shortcut?.complete(generated);
+        } catch (error) {
+            shortcut?.fail(error);
+            throw error;
         } finally { if (sceneStop.current === controller) sceneStop.current = null; }
     });
+
+    useEffect(() => {
+        if (portraitLoading || portraitCheckedFor !== `${project.id}/${ch.id}`) return;
+        const shortcut = takeSceneShortcut(project.id, ch.id);
+        if (!shortcut) return;
+        try {
+            if (job.current || ai.busy) throw new Error('Another operation is running for this character. Wait for it to finish and try the scene shortcut again.');
+            assertSceneCurrent(stContext(), shortcut.snapshot);
+            if (!nano || !ready) {
+                setSetupOpen(true);
+                throw new Error('Configure NanoGPT and your key in Image settings, then press the scene shortcut again.');
+            }
+            if (!avatarPic) throw new Error('Choose or load this character’s portrait before using the scene shortcut.');
+            paintScene(shortcut);
+        } catch (error) { setError(error.message); shortcut.fail(error); }
+    }, [project.id, ch.id, portraitLoading, portraitCheckedFor, ready, nano, chatVersion]);
 
     const paintSpriteSet = labels => run('sprites', async () => {
         setExpressionError('');
@@ -276,7 +302,7 @@ export function CharacterPictures({ store, env, project, ch }) {
                 <${TextArea} label="Scene illustration guidance" value=${sceneGuidance} rows=${2} onChange=${setSceneGuidance} hint="Optional framing or style guidance. Leave empty to follow the conversation." />
             </details>
             <div class="cs-row">
-                <${Button} kind="primary" icon="image" label=${busy === 'scene' ? 'Illustrating current scene…' : 'Illustrate current scene'} onClick=${paintScene} disabled=${!!busy || ai.busy || portraitLoading || !avatarPic || !nano || !ready || !!sceneProblem} />
+                <${Button} kind="primary" icon="image" label=${busy === 'scene' ? 'Illustrating current scene…' : 'Illustrate current scene'} onClick=${() => paintScene()} disabled=${!!busy || ai.busy || portraitLoading || !avatarPic || !nano || !ready || !!sceneProblem} />
                 ${busy === 'scene' && html`<${Button} icon="stop" label="Cancel scene illustration" onClick=${() => sceneStop.current?.abort()} />`}
             </div>
             ${!nano ? html`<p class="cs-muted cs-small">Select NanoGPT in Image settings to enable this workflow.</p>` : !ready ? html`<p class="cs-warn-text cs-small">Configure your NanoGPT key and an image-editing model in Image settings.</p>` : sceneProblem ? html`<p class="cs-warn-text cs-small">${sceneProblem}</p>` : html`<p class="cs-muted cs-small">Uses up to ${settings.sceneMessages} recent visible messages. Clicking sends context to your creation LLM and makes one paid image request.</p>`}

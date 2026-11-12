@@ -11,11 +11,11 @@ Open Creative Studio with the feather in SillyTavern’s top bar, or **Ctrl+Shif
 
 AI generation uses the connection selected in **AI setup** and your provider’s normal usage terms. Importing, editing and exporting do not need an AI connection.
 
-## Illustrate the current chat with NanoGPT (1.3.0 fork)
+## Illustrate the current chat with NanoGPT (1.3.1 fork)
 
 After importing the active character through **From SillyTavern**, keep that character's chat open and go to **Pictures → Image settings → NanoGPT**. Enter a session-only key, choose an image-editing model (for example `bytedance/seedream-v5.5` or `hidream-o1-image`), and leave output resolution on **Auto** to use a supported size. Your existing creation text connection is used for scene analysis; it can also be NanoGPT.
 
-Press **Illustrate current scene**. Studio automatically loads the selected portrait, sends recent visible messages and card context to the text LLM, then sends its editing instructions and the re-encoded portrait to NanoGPT. Clothes, surroundings, pose and framing follow the latest scene; identity and drawing style are anchored to the reference. Optional visual direction is available but not required. The result is previewed and saved in the gallery without changing the avatar or adding a chat message.
+Press **Illustrate current scene**. After initial configuration, you can also start it directly from the chat **More menu → Illustrate current scene** (after Continue): Studio opens the active character's Pictures and starts automatically, with no second click. Missing setup opens image settings without spending image credits. Studio automatically loads the selected portrait, sends recent visible messages and card context to the text LLM, then sends its editing instructions and the re-encoded portrait to NanoGPT. Clothes, surroundings, pose and framing follow the latest scene; identity and drawing style are anchored to the reference. Optional visual direction is available but not required. The result is previewed and saved in the gallery without changing the avatar or adding a chat message.
 
 The default context is 12 messages (configurable up to 40, also text-bounded). The action currently supports one-character chats, and refuses a chat belonging to another character. Missing references and unsupported models never fall back to a fresh text-to-image person. **Cancel scene illustration** stops further stages; an image request already submitted may still be billed. There are no automatic image retries.
 
