@@ -1,7 +1,8 @@
 // Creative Studio workbench shell: project tree | focused editor | inspector (AI proposals, history, diagnostics).
 import { render } from '../../vendor/preact-htm.mjs';
 import { html, useState, useEffect, useCallback, useMemo, useRef, Button, Icon, Badge, cx, pickFile } from './kit.js';
-import { createStore, useStore } from './store.js';
+import { useStore } from './store.js';
+import { getStudioRuntime, withDefaultCreationModel } from '../st/studio-runtime.js';
 import { createProject, findArtifact, isUntouchedBlank } from '../core/project.js';
 import { Workspace, AREA_FOR_TYPE } from './workspace.js';
 import { Palette } from './palette.js';
@@ -14,17 +15,6 @@ import { Guide } from './guide.js';
 import { queueSceneShortcut } from './scene-shortcut.js';
 import { assertSceneCurrent } from '../core/scene.js';
 
-/** A new project starts with the creation model chosen last time (if that profile still exists). */
-function withDefaultCreationModel(project) {
-    try {
-        const ctx = globalThis.SillyTavern.getContext();
-        const id = ctx.extensionSettings?.creativeStudio?.defaultCreationProfileId;
-        if (id && ctx.extensionSettings?.connectionManager?.profiles?.some(p => p.id === id)) {
-            return { ...project, settings: { ...project.settings, creationProfileId: id } };
-        }
-    } catch { /* no ST context */ }
-    return project;
-}
 
 let store = null;
 let studioEnv = null;
@@ -44,18 +34,10 @@ const isEmptyProject = p => !['characters', 'lorebooks', 'presets', 'regexScript
 
 /** Mount (or re-show) the studio into the given root element. */
 export async function mountStudio(root, { route, onClose }) {
-    if (!studioEnv) {
-        const { createEnvironment } = await import('../st/env.js');
-        studioEnv = await createEnvironment();
-        // Put back studio settings and profiles that a stale SillyTavern tab may have saved over.
-        const { attachSettingsBackup } = await import('../st/studio-settings.js');
-        const restored = await attachSettingsBackup(globalThis.SillyTavern.getContext(), studioEnv.storage).catch(() => []);
-        if (restored.length) setTimeout(() => studioEnv.toast(`Restored ${restored.join(', ')}: another SillyTavern tab had saved older settings over them.`, 'ok', 9000), 1200);
-    }
-    if (!store) {
-        const last = await studioEnv.storage.loadLastProject().catch(() => null);
-        store = createStore(last ?? withDefaultCreationModel(createProject('My first project')), { sticky: ['generationRuns', 'workspace'] });
-        studioEnv.attachStore(store);
+    if (!studioEnv || !store) {
+        const runtime = await getStudioRuntime();
+        ({ env: studioEnv, store } = runtime);
+        if (runtime.restored?.length) setTimeout(() => studioEnv.toast(`Restored ${runtime.restored.join(', ')}: another SillyTavern tab had saved older settings over them.`, 'ok', 9000), 1200);
     }
     render(html`<${Studio} store=${store} env=${studioEnv} initialRoute=${route} onClose=${onClose} />`, root);
 }
@@ -300,7 +282,7 @@ function Studio({ store, env, initialRoute, onClose }) {
     return html`<div class="cs-studio" onKeyDown=${onKey} tabIndex="-1" role="application" aria-label="Creative Studio"
         onDragEnter=${onDragOver} onDragOver=${onDragOver} onDragLeave=${onDragLeave} onDrop=${onDrop}>
         <header class="cs-topbar">
-            <div class="cs-brand" title="Creative Studio 1.3.1"><${Icon} name="feather-pointed" /> Creative Studio <small class="cs-muted">1.3.1</small></div>
+            <div class="cs-brand" title="Creative Studio 1.3.2"><${Icon} name="feather-pointed" /> Creative Studio <small class="cs-muted">1.3.2</small></div>
             <${ProjectSwitcher} store=${store} env=${env} project=${project} />
             <div class="cs-spacer"></div>
             <div class="cs-topbar-right">

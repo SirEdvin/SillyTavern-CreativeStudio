@@ -72,3 +72,29 @@ test('server failure falls back to browser cache and reload prefers the newer co
     assert.equal(loaded.notes, 'unsynced');
     assert.match(loaded._loadedFrom, /browser cache/);
 });
+
+test('concurrent background and foreground saves retain both index entries',async()=>{
+    const {transport}=fakeServer();const s=createStorage(transport),a=createProject('A'),b=createProject('B');
+    await Promise.all([s.saveProject(a),s.saveProject(b,{activate:false})]);
+    assert.deepEqual(new Set((await s.listProjects()).map(p=>p.id)),new Set([a.id,b.id]));
+    assert.equal((await s.loadLastProject()).id,a.id);
+});
+
+test('strict background saves fail closed on revision read errors and deleted projects with zero uploads',async()=>{
+    const {transport}=fakeServer();let uploads=0;
+    const counted={...transport,upload:async(...args)=>{uploads++;return transport.upload(...args)}};
+    const failed=createStorage({...counted,fetch:async()=>{throw new Error('temporary GET failure')}});
+    await assert.rejects(failed.saveProject(createProject('Old'),{baseRevision:'old',rejectConflict:true,activate:false}),/verify.*revision/i);
+    assert.equal(uploads,0);
+    const missing=createStorage({...counted,fetch:async()=>({ok:false,status:404})});
+    await assert.rejects(missing.saveProject(createProject('Deleted'),{baseRevision:'old',rejectConflict:true,activate:false}),/deleted/i);
+    assert.equal(uploads,0);
+});
+test('background saves preserve lastOpen and reject stale revisions without overwriting another tab',async()=>{
+    const {transport}=fakeServer();const s=createStorage(transport),visible=createProject('Visible'),background=createProject('Background');
+    await s.saveProject(visible);const first=await s.saveProject(background,{activate:false});
+    assert.equal((await s.loadLastProject()).id,visible.id);
+    await s.saveProject({...background,notes:'newer remote edit'},{baseRevision:first.revision,activate:false});
+    await assert.rejects(s.saveProject({...background,notes:'stale overwrite'},{baseRevision:first.revision,activate:false,rejectConflict:true}),/changed.*tab/i);
+    assert.equal((await s.loadProject(background.id)).notes,'newer remote edit');
+});

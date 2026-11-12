@@ -25,6 +25,7 @@ function safe(s) {
 export function createStorage(transport) {
     const cache = transport.cache ?? null;
     let indexMemo = null;
+    let projectSaves = Promise.resolve();
 
     async function readJson(name) {
         const res = await transport.fetch(`user/files/${name}`);
@@ -97,36 +98,50 @@ export function createStorage(transport) {
          * @param {{ baseRevision?: string }} [opts] revision the caller last loaded/saved; a different server revision means another tab saved in between
          * @returns {Promise<{where: 'server'|'browser', error?: string, revision?: string, conflict?: {snapshotId: string}}>}
          */
-        async saveProject(project, { baseRevision } = {}) {
-            const doc = clone(project);
-            delete doc._loadedFrom;
-            doc.revision = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-            if (cache) await cache.setItem(`project:${doc.id}`, doc).catch(() => {});
-            let conflict;
-            if (baseRevision !== undefined) {
-                const server = await readJson(projectFile(doc.id)).catch(() => null);
-                if (server && server.revision && server.revision !== baseRevision) {
-                    // Someone else (another tab/device) saved since we loaded: keep their version as a snapshot, then save ours.
-                    const snap = makeSnapshot(migrateProject(server), 'Concurrent edit from another tab (kept before overwrite)', 'conflict');
-                    await writeJson(snapshotFile(doc.id, snap.id), snap).catch(() => {});
-                    const idx = await readIndex(true);
-                    await writeIndex({ ...idx, projects: idx.projects.map(p => (p.id === doc.id ? { ...p, snapshots: [...(p.snapshots ?? []), { id: snap.id, time: snap.time, label: snap.label, kind: 'conflict', hash: snap.hash }].slice(-200) } : p)) });
-                    conflict = { snapshotId: snap.id };
-                }
-            }
+        async saveProject(project, { baseRevision, activate = true, rejectConflict = false } = {}) {
+            // Background chat jobs and visible Studio autosave share this storage instance/index.
+            const previous = projectSaves;
+            let release;
+            projectSaves = new Promise(resolve => { release = resolve; });
+            await previous;
             try {
-                await writeJson(projectFile(doc.id), doc);
-                const idx = await readIndex(true);
-                const prev = idx.projects.find(p => p.id === doc.id) ?? {};
-                // stAvatars: which SillyTavern characters live in this project ("Open in Creative Studio" returns to it).
-                const stAvatars = doc.characters.map(c => (c.origin?.kind === 'st' ? c.origin.avatar : c.stAvatar)).filter(Boolean);
-                const entry = { ...prev, id: doc.id, name: doc.name, modified: doc.modified, characters: doc.characters.length, stAvatars };
-                const others = idx.projects.filter(p => p.id !== doc.id);
-                await writeIndex({ ...idx, projects: [...others, entry], lastOpen: doc.id });
-                return { where: 'server', revision: doc.revision, conflict };
-            } catch (e) {
-                return { where: 'browser', error: e.message };
-            }
+                const doc = clone(project);
+                delete doc._loadedFrom;
+                doc.revision = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+                let conflict;
+                if (baseRevision !== undefined) {
+                    const server = await readJson(projectFile(doc.id)).catch(error => {
+                        if (rejectConflict) throw new Error(`Could not verify the background project revision: ${error.message}`);
+                        return null;
+                    });
+                    if (rejectConflict && ((!server && baseRevision !== null) || (server && (server.revision ?? null) !== baseRevision))) {
+                        throw new Error('The background project changed or was deleted in another tab. Reopen it before trying again.');
+                    }
+                    if (server && server.revision && server.revision !== baseRevision) {
+                        if (rejectConflict) throw new Error('The background project changed in another tab. Reopen it before trying again.');
+                        // Someone else (another tab/device) saved since we loaded: keep their version as a snapshot, then save ours.
+                        const snap = makeSnapshot(migrateProject(server), 'Concurrent edit from another tab (kept before overwrite)', 'conflict');
+                        await writeJson(snapshotFile(doc.id, snap.id), snap).catch(() => {});
+                        const idx = await readIndex(true);
+                        await writeIndex({ ...idx, projects: idx.projects.map(p => (p.id === doc.id ? { ...p, snapshots: [...(p.snapshots ?? []), { id: snap.id, time: snap.time, label: snap.label, kind: 'conflict', hash: snap.hash }].slice(-200) } : p)) });
+                        conflict = { snapshotId: snap.id };
+                    }
+                }
+                if (cache) await cache.setItem(`project:${doc.id}`, doc).catch(() => {});
+                try {
+                    await writeJson(projectFile(doc.id), doc);
+                    const idx = await readIndex(true);
+                    const prev = idx.projects.find(p => p.id === doc.id) ?? {};
+                    // stAvatars: which SillyTavern characters live in this project ("Open in Creative Studio" returns to it).
+                    const stAvatars = doc.characters.map(c => (c.origin?.kind === 'st' ? c.origin.avatar : c.stAvatar)).filter(Boolean);
+                    const entry = { ...prev, id: doc.id, name: doc.name, modified: doc.modified, characters: doc.characters.length, stAvatars };
+                    const others = idx.projects.filter(p => p.id !== doc.id);
+                    await writeIndex({ ...idx, projects: [...others, entry], lastOpen: activate ? doc.id : idx.lastOpen });
+                    return { where: 'server', revision: doc.revision, conflict };
+                } catch (e) {
+                    return { where: 'browser', error: e.message };
+                }
+            } finally { release(); }
         },
 
         async deleteProject(id) {

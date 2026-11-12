@@ -9,7 +9,7 @@ const mime = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'te
 const server = http.createServer(async (req, res) => {
     try {
         const path = new URL(req.url, 'http://localhost').pathname;
-        if (path.startsWith('/__test_media/')) {
+        if (path.startsWith('/__test_media/') || path.startsWith('/user/files/')) {
             if (req.method === 'POST') {
                 const chunks = []; let size = 0;
                 for await (const chunk of req) { size += chunk.length; if (size > 16 * 1024 * 1024) throw new Error('Too large'); chunks.push(chunk); }

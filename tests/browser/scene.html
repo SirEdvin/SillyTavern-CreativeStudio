@@ -16,7 +16,7 @@ const realFetch = window.fetch.bind(window);
 const calls = [];
 const stFiles = new Map();
 let mode = 'success', pending = null, pendingComfy = null, comfySignal = null;
-let delayCharacterExport = false, releaseCharacterExport = null, expireCharacterOpening = null;
+
 const events = new Map();
 function event(name) { for (const fn of events.get(name) ?? []) fn(); }
 function image(label, background) {
@@ -42,18 +42,22 @@ const ctx = {
     eventTypes:{CHAT_CHANGED:'chat_changed'},eventSource:{on(type,fn){if(!events.has(type))events.set(type,new Set());events.get(type).add(fn)},removeListener(type,fn){events.get(type)?.delete(fn)}},
     async generateRaw(args){calls.push({type:'llm',args}); if(mode==='slow-llm')return new Promise(resolve=>{pending=resolve}); return JSON.stringify({ scene:'Mara in a black coat at a rainy railway platform.', instruction:'Use the attached portrait as the character identity and anime art-style reference. Show her in a black coat, standing at the rainy railway platform, with a worried glance and waist-up framing.' });},
 };
+let savedChat=structuredClone(ctx.chat);
+ctx.saveChat=async()=>{await fetch('/api/chats/save',{method:'POST',body:JSON.stringify({chat:ctx.chat})})};
 window.SillyTavern={getContext:()=>({...ctx})};
 setNanoSessionKey('fixture-only-not-a-real-key',ctx);
 window.fetch=async(url,options={})=>{
+    if(String(url)==='/api/chats/get'){calls.push({type:'chat-read',body:JSON.parse(options.body)});return Response.json([{chat_metadata:{}},...savedChat]);}
+    if(String(url)==='/api/chats/save'){calls.push({type:'chat-save'});if(mode!=='save-error')savedChat=JSON.parse(options.body).chat;return Response.json({});}
     if(String(url)==='/api/characters/export') {
         calls.push({type:'character-export',body:JSON.parse(options.body)});
-        if(delayCharacterExport)await new Promise(resolve=>{releaseCharacterExport=resolve;if(expireCharacterOpening)setTimeout(expireCharacterOpening,25)});
+
         return new Response(writeCardChunks(original,{chara:JSON.stringify(character.card.data)}),{headers:{'Content-Type':'image/png'}});
     }
     if(String(url).startsWith('/api/sprites/get?'))return Response.json([]);
     if(String(url)==='/api/files/upload') {
         const body=JSON.parse(options.body),bytes=base64ToBytes(body.data);stFiles.set('/user/files/'+body.name,bytes);
-        const path='/__test_media/'+body.name;await realFetch(path,{method:'POST',body:bytes});return Response.json({path:path.slice(1)});
+        const path='/user/files/'+body.name;await realFetch(path,{method:'POST',body:bytes});return Response.json({path:path.slice(1)});
     }
     if(stFiles.has(String(url)))return new Response(stFiles.get(String(url)),{headers:{'Content-Type':String(url).endsWith('.json')?'application/json':'image/png'}});
     if(String(url).startsWith('/user/files/'))return new Response('',{status:404});
@@ -117,60 +121,7 @@ window.runSceneTests=async()=>{
 window.sceneHarness={store,ctx,calls,event};document.querySelector('#test-report').textContent='Ready. Run await window.runSceneTests() in the browser console.';
 document.querySelector('#options_button').addEventListener('click',()=>{const menu=document.querySelector('#options');menu.style.display=menu.style.display==='none'?'block':'none';});
 let continues=0;document.querySelector('#option_continue').addEventListener('click',()=>continues++);
-window.toastr={error(message){calls.push({type:'shortcut-error',message})},info(message){calls.push({type:'shortcut-info',message})}};
-window.runMoreMenuTests=async({scenario='existing'}={})=>{
-    const imported=['absent','timeout-retry'].includes(scenario);
-    render(null,document.querySelector('#root'));
-    const initial=structuredClone(project);initial.media[0].url='/__test_media/original.png';
-    await realFetch('/__test_media/original.png',{method:'POST',body:original});
-    const encode=value=>new TextEncoder().encode(JSON.stringify(value));
-    const home=structuredClone(initial);
-    if(scenario==='elsewhere')home.id='prj_existing_character';
-    if(scenario!=='existing'){initial.characters=[];initial.media=[];initial.workspace={};}
-    const entries=[{id:initial.id,name:initial.name,stAvatars:scenario==='existing'?['mara.png']:[]}];
-    if(scenario==='elsewhere'){entries.push({id:home.id,name:home.name,stAvatars:['mara.png']});stFiles.set('/user/files/cstudio-p-'+home.id+'.json',encode(home));}
-    stFiles.set('/user/files/cstudio-index.json',encode({lastOpen:initial.id,projects:entries}));
-    stFiles.set('/user/files/cstudio-p-'+initial.id+'.json',encode(initial));
-    ctx.extensionSettings.creativeStudio.image.backend='nanogpt';mode='success';
-    await import('/index.js');
-    const item=document.querySelector('#cs-option-illustrate-scene');assert(item,'More menu entry exists');
-    assert(item.previousElementSibling.id==='option_continue','entry follows Continue');
-    const before=calls.filter(x=>x.type==='image').length,llms=calls.filter(x=>x.type==='llm').length;
-    const originalTimeout=window.setTimeout;
-    if(scenario==='timeout-retry'){
-        delayCharacterExport=true;let accelerated=false;
-        window.setTimeout=(fn,ms,...args)=>{if(ms===30000&&!accelerated){accelerated=true;expireCharacterOpening=fn;}return originalTimeout(fn,ms,...args)};
-    }
-    document.querySelector('#options_button').click();item.click();item.click();
-    if(scenario==='timeout-retry'){
-        await waitFor(()=>releaseCharacterExport&&item.getAttribute('aria-disabled')==='false');
-        item.click();await new Promise(resolve=>originalTimeout(resolve,100));
-        delayCharacterExport=false;releaseCharacterExport();window.setTimeout=originalTimeout;
-    }
-    await waitFor(()=>document.querySelector('#cs-root .cs-scene-result img')?.naturalWidth>0);
-    await waitFor(()=>item.getAttribute('aria-disabled')==='false');
-    assert(calls.filter(x=>x.type==='image').length===before+1,'one menu click/duplicate click caused exactly one image job');
-    assert(calls.filter(x=>x.type==='llm').length===llms+1,'menu automatically runs LLM with no second Generate click');
-    const targetId=scenario==='elsewhere'?home.id:initial.id;
-    const savedProject=()=>JSON.parse(new TextDecoder().decode(stFiles.get('/user/files/cstudio-p-'+targetId+'.json')));
-    await waitFor(()=>savedProject().media.some(m=>m.purpose==='scene'));
-    assert(savedProject().characters.length===1,'exactly one Studio character exists after shortcut');
-    if(!imported)assert(savedProject().characters[0].id===character.id,'existing character is reused without replacement');
-    assert(calls.filter(x=>x.type==='character-export').length===(imported?1:0),'character is imported exactly once if absent, never if already present');
-    assert(document.querySelector('#options').style.display==='none','menu closes through native toggle');
-    document.querySelector('#option_continue').click();assert(continues===1,'Continue handler unchanged');
-    const {addSceneMenuItem}=await import('/src/ui/more-menu.js');addSceneMenuItem({onRun:()=>{throw new Error('must not replace existing handler')}});
-    assert(document.querySelectorAll('#cs-option-illustrate-scene').length===1,'registration is idempotent');
-    setNanoSessionKey('',ctx);item.click();
-    await waitFor(()=>item.getAttribute('aria-disabled')==='false'&&document.querySelector('input[aria-label="Session-only NanoGPT API key"]'));
-    assert(calls.filter(x=>x.type==='image').length===before+1,'missing setup makes no image request');
-    setNanoSessionKey('fixture-only-not-a-real-key',ctx);
-    ctx.groupId='fixture-group';item.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
-    await waitFor(()=>item.getAttribute('aria-disabled')==='false');delete ctx.groupId;
-    assert(calls.filter(x=>x.type==='image').length===before+1,'unsupported group chat makes no paid request');
-    assert(calls.some(x=>x.type==='shortcut-error'&&/group/i.test(x.message)),'keyboard activation surfaces group error');
-    assert(calls.filter(x=>x.type==='character-export').length===(imported?1:0),'subsequent shortcuts never reimport the character');
-    const results=['PASS actual extension entrypoint registers the More-menu action after Continue','PASS menu opens actual Studio, selects active character Pictures and starts generation without a second click','PASS character '+scenario+': exactly one character, no duplicate/replacement, import only when absent','PASS duplicate clicks are blocked, native menu closes, Continue is unchanged and registration is idempotent','PASS missing NanoGPT setup opens settings without submitting an image request','PASS keyboard activation reports unsupported group chat without spending credits'];
-    window.moreMenuResults=results;document.querySelector('#test-report').textContent=results.join('\n');return results;
-};
+window.toastr={error(message){calls.push({type:'shortcut-error',message})},success(message){calls.push({type:'shortcut-success',message})},info(message){calls.push({type:'shortcut-info',message})}};
+window.sceneHarness={store,ctx,calls,event,stFiles,realFetch,original,project,character,setMode:value=>{mode=value},setSavedChat:value=>{savedChat=structuredClone(value)},getSavedChat:()=>savedChat};
+await import('/tests/browser/chat-menu-tests.js');
 </script></body></html>

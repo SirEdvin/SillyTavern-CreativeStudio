@@ -10,7 +10,7 @@ import { stContext } from './env.js';
 import { promptOverrides } from './prompt-store.js';
 
 export async function illustrateScene({ store, env, projectId, characterId, ctx, generate,
-    signal, onStatus = () => {}, messages = 12, guidance = '', runLlm = runStructured }) {
+    signal, onStatus = () => {}, messages = 12, guidance = '', runLlm = runStructured, guard = () => {} }) {
     // ST getContext() returns a snapshot wrapper: refresh it for ownership checks, not just once at job start.
     const context = () => ctx ?? stContext();
     const startedContext = context();
@@ -23,6 +23,7 @@ export async function illustrateScene({ store, env, projectId, characterId, ctx,
     const portraitId = reference.id;
     const check = () => {
         if (signal?.aborted) throw new Error('Scene illustration cancelled.');
+        guard();
         const current = pictureTarget(store.get(), projectId, characterId);
         if (current.avatarMediaId !== portraitId) throw new Error('The reference portrait changed. Start scene illustration again.');
         assertSceneCurrent(context(), snapshot);
