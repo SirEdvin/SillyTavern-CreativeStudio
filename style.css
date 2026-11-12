@@ -452,6 +452,9 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-provider-form .cs-field-head > span { font-weight: 600; font-size: 0.9em; color: var(--cs-dim); }
 .cs-monogram { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 6px; display: grid; place-items: center; font-family: 'Cinzel', 'Cormorant Garamond', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 1.25em; font-weight: 600; letter-spacing: .04em; color: var(--cs-accent); border: 1px solid color-mix(in srgb, var(--cs-accent) 55%, var(--cs-line)); background: color-mix(in srgb, var(--cs-accent) 8%, transparent); }
 .cs-studio .cs-test-image { max-width: 360px; max-height: 260px; border-radius: 6px; border: 1px solid var(--cs-line); object-fit: cover; }
+.cs-studio .cs-scene-result { margin: 12px 0; display: grid; gap: 8px; }
+.cs-studio .cs-scene-result > img { display: block; max-width: 100%; max-height: 70vh; border-radius: 8px; object-fit: contain; border: 1px solid var(--cs-line); }
+.cs-studio .cs-scene-result figcaption { overflow-wrap: anywhere; }
 
 /* Images tab */
 .cs-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 14px; }

@@ -1,0 +1,103 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Creative Studio scene illustration — TEST harness</title>
+<link rel="stylesheet" href="/style.css"><style>body{margin:0;background:#17151d;color:#e9e4f3;font:16px system-ui}header{padding:18px;background:#373046}#root{max-width:1100px;margin:auto;padding:20px}.cs-studio{position:static!important;display:block!important;--cs-bg:#201d27;--cs-line:#50465e;--cs-text:#e9e4f3;--cs-dim:#bab0c9;--cs-accent:#80d6c3}#test-report{white-space:pre-wrap} .cs-modal-overlay{z-index:1000}</style></head><body>
+<header><strong>Browser integration TEST harness — fake LLM and image-service responses, no real API calls or charges.</strong><pre id="test-report">Loading…</pre></header>
+<div id="root" class="cs-studio"></div>
+<script type="module">
+import { html, render, useState, useEffect } from '/vendor/preact-htm.mjs';
+import { CharacterPictures } from '/src/ui/character-pictures.js';
+import { createProject, newCharacter } from '/src/core/project.js';
+import { createStore } from '/src/ui/store.js';
+import { base64ToBytes, bytesToBase64 } from '/src/core/bytes.js';
+import { writeCardChunks, extractChunks } from '/src/core/png.js';
+import { setNanoSessionKey } from '/src/st/nanogpt.js';
+
+const realFetch = window.fetch.bind(window);
+const calls = [];
+let mode = 'success', pending = null, pendingComfy = null, comfySignal = null;
+const events = new Map();
+function event(name) { for (const fn of events.get(name) ?? []) fn(); }
+function image(label, background) {
+    const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 640;
+    const g = canvas.getContext('2d'); g.fillStyle = background; g.fillRect(0,0,512,640);
+    g.fillStyle = '#e6d4c4'; g.beginPath();g.arc(256,220,80,0,Math.PI*2);g.fill();
+    g.fillStyle = '#aaa2c8';g.fillRect(170,120,172,70);g.fillRect(170,170,28,130);g.fillRect(314,170,28,130);
+    g.fillStyle = '#252337';g.fillRect(175,305,162,245);g.fillStyle='#e8bd71';g.fillRect(215,218,14,8);g.fillRect(284,218,14,8);
+    g.fillStyle = '#fff';g.font='bold 22px system-ui';g.textAlign='center';g.fillText(label,256,590);g.font='16px system-ui';g.fillText('Synthetic browser-test fixture',256,620);
+    return canvas.toDataURL('image/png');
+}
+const originalUrl = image('TEST REFERENCE', '#665580');
+const outputUrl = image('TEST SCENE OUTPUT', '#254d62');
+const original = writeCardChunks(base64ToBytes(originalUrl.split(',')[1]), { chara: JSON.stringify({ secret_card_metadata: 'must-not-leave-the-browser' }) });
+const model = { id: 'bytedance/seedream-v5.5', name: 'Fixture editor', architecture: { input_modalities: ['text', 'image'] }, supported_parameters: { resolutions: ['1k','2k'], max_input_images: 1 } };
+const metadata = { ...model, endpoints: [{ supported_parameters: model.supported_parameters, input_reference_constraints: { max_items:1, route: { min_width:8,min_height:8,max_bytes:10000000,formats:['png'] } } }] };
+const ctx = {
+    characterId:0, characters:[{ avatar:'mara.png',name:'Mara' }], getCurrentChatId:()=> 'fixture-chat',
+    chat:[{ name:'You',is_user:true,mes:'Let us leave the library.' },{name:'Mara',mes:'She puts on a black coat and waits at the rainy railway platform.'}],
+    mainApi:'openai', onlineStatus:'fixture-model',getChatCompletionModel:()=> 'fixture-text-model',
+    extensionSettings:{ creativeStudio:{ image:{ backend:'nanogpt',nanoModel:model.id,nanoResolution:'auto',sceneMessages:12 } } },
+    saveSettingsDebounced(){},getRequestHeaders:()=>({'Content-Type':'application/json','X-CSRF-Token':'fixture-csrf'}),
+    eventTypes:{CHAT_CHANGED:'chat_changed'},eventSource:{on(type,fn){if(!events.has(type))events.set(type,new Set());events.get(type).add(fn)},removeListener(type,fn){events.get(type)?.delete(fn)}},
+    async generateRaw(args){calls.push({type:'llm',args}); if(mode==='slow-llm')return new Promise(resolve=>{pending=resolve}); return JSON.stringify({ scene:'Mara in a black coat at a rainy railway platform.', instruction:'Use the attached portrait as the character identity and anime art-style reference. Show her in a black coat, standing at the rainy railway platform, with a worried glance and waist-up framing.' });},
+};
+window.SillyTavern={getContext:()=>({...ctx})};
+setNanoSessionKey('fixture-only-not-a-real-key',ctx);
+window.fetch=async(url,options={})=>{
+    if(String(url).startsWith('https://api.nano-gpt.com')){
+        if(String(url).endsWith('/models'))return Response.json({data:[model]});
+        if(String(url).endsWith('/endpoints'))return Response.json(metadata);
+        if(String(url).endsWith('/images')){
+            calls.push({type:'image',body:JSON.parse(options.body),headers:options.headers});
+            if(mode==='provider-error')return new Response('failure',{status:502});
+            return Response.json({data:[{b64_json:outputUrl.split(',')[1]}]});
+        }
+        throw new Error('Unexpected NanoGPT test request');
+    }
+    if(String(url)==='/api/sd/comfy/generate') {
+        comfySignal=options.signal;
+        return new Promise(resolve=>{pendingComfy=()=>resolve(Response.json({data:outputUrl.split(',')[1]}))});
+    }
+    if(String(url).startsWith('/api/secrets/'))return Response.json({api_key_nanogpt:[]});
+    return realFetch(url,options);
+};
+const project=createProject('Scene browser test');const character=newCharacter('Mara');character.origin={kind:'st',avatar:'mara.png'};character.avatarMediaId='original';
+character.card.data.description='An adult silver-haired woman with amber eyes.';
+project.characters=[character];project.workspace={characterId:character.id};project.media=[{id:'original',kind:'image',role:'avatar',url:originalUrl}];
+const store=createStore(project);
+const env={toast(...args){calls.push({type:'toast',args})},confirm:async()=>true,storage:{
+    loadMediaBytes:async(url)=>url===originalUrl?original:new Uint8Array(await(await realFetch(url)).arrayBuffer()),
+    saveMedia:async(_project,id,_ext,bytes)=>{const path='/__test_media/'+id+'.png';await realFetch(path,{method:'POST',body:bytes});return path;}
+}};
+function Host(){const[p,setP]=useState(store.get());useEffect(()=>store.subscribe(setP),[]);return html`<${CharacterPictures} store=${store} env=${env} project=${p} ch=${p.characters[0]} />`;}
+render(html`<${Host}/>`,document.querySelector('#root'));
+const waitFor=async(check)=>{for(let i=0;i<200;i++){if(check())return;await new Promise(r=>setTimeout(r,25));}throw new Error('Timed out waiting for browser UI');};
+const button=label=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===label);
+const assert=(ok,message)=>{if(!ok)throw new Error(message)};
+window.runSceneTests=async()=>{
+    const results=[];await waitFor(()=>button('Illustrate current scene')&&!button('Illustrate current scene').disabled);
+    button('Illustrate current scene').click();await waitFor(()=>document.querySelector('.cs-scene-result img')?.naturalWidth>0);
+    const request=calls.find(x=>x.type==='image');assert(request,'image API called');assert(calls.filter(x=>x.type==='llm').length===1,'one LLM call');
+    assert(request.body.input_references.length===1,'portrait attached');assert(request.body.prompt.includes('black coat'),'scene changes included');
+    assert(!request.headers['X-CSRF-Token'],'local CSRF not leaked');
+    const chunks=extractChunks(base64ToBytes(request.body.input_references[0].split(',')[1]));assert(!chunks.some(x=>x.name==='tEXt'),'card metadata removed');
+    assert(store.get().characters[0].avatarMediaId==='original','avatar unchanged');assert(store.get().media.length===2,'scene saved to gallery');
+    assert(!JSON.stringify(store.get()).includes('fixture-only-not-a-real-key'),'key absent from project');
+    assert(!JSON.stringify(ctx.extensionSettings).includes('fixture-only-not-a-real-key'),'key absent from settings');
+    results.push('PASS one-click real UI → LLM fixture → reference-edit API fixture → visible saved image');
+    results.push('PASS portrait metadata stripped; original avatar unchanged; no secret persisted');
+    mode='provider-error';await waitFor(()=>button('Illustrate current scene')&&!button('Illustrate current scene').disabled);button('Illustrate current scene').click();await waitFor(()=>document.body.innerText.includes('HTTP 502')&&button('Illustrate current scene')&&!button('Illustrate current scene').disabled);
+    assert(store.get().media.length===2,'provider failure saved no image');results.push('PASS provider failure has no text-only fallback or fake success');
+    mode='slow-llm';button('Illustrate current scene').click();await waitFor(()=>pending&&button('Cancel scene illustration'));
+    const count=calls.filter(x=>x.type==='image').length;button('Cancel scene illustration').click();await waitFor(()=>button('Illustrate current scene')&&!button('Illustrate current scene').disabled);
+    assert(calls.filter(x=>x.type==='image').length===count,'cancel caused no image call');pending?.('{}');pending=null;results.push('PASS cancel during LLM prevents paid image request');
+    Object.assign(ctx.extensionSettings.creativeStudio.image,{backend:'comfy',ckpt:'fixture.safetensors',url:'http://comfy.invalid',transparentSprites:false});
+    store.update(p=>({...p}),'test backend',{history:false});
+    await waitFor(()=>button('Generate one expression')&&!button('Generate one expression').disabled);button('Generate one expression').click();
+    await waitFor(()=>pendingComfy);event('chat_changed');assert(!comfySignal.aborted,'chat listener must not abort expression controller');
+    pendingComfy();await waitFor(()=>Object.keys(store.get().characters[0].sprites??{}).length===1);
+    results.push('PASS chat changes cancel scenes without aborting independent ComfyUI expressions');
+    Object.assign(ctx.extensionSettings.creativeStudio.image,{backend:'nanogpt'});store.update(p=>({...p}),'test backend',{history:false});
+    mode='success';await waitFor(()=>button('Illustrate current scene')&&!button('Illustrate current scene').disabled);button('Illustrate current scene').click();await waitFor(()=>document.querySelector('.cs-scene-result img')?.naturalWidth>0);
+    document.querySelector('#test-report').textContent=results.join('\n');window.browserResults=results;return results;
+};
+window.sceneHarness={store,ctx,calls,event};document.querySelector('#test-report').textContent='Ready. Run await window.runSceneTests() in the browser console.';
+</script></body></html>

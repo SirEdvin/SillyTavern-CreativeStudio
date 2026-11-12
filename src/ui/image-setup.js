@@ -5,6 +5,7 @@ import { stContext } from '../st/env.js';
 import { imageSettings, saveImageSettings, familyOf, comfyPing, comfyCheckpoints, comfySamplers, paint } from '../st/comfy.js';
 import { FAMILIES, detectFamily, isFast, samplingFor, adoptWorkflow } from '../core/comfy.js';
 import { utf8Decode } from '../core/bytes.js';
+import { NanoImageSetup } from './nanogpt-setup.js';
 
 export function ImageSetup({ env }) {
     const ctx = stContext();
@@ -59,10 +60,11 @@ export function ImageSetup({ env }) {
     return html`<${Section} title="Images" open=${true}>
         <div class="cs-muted cs-small">Portraits, scenes and expression sprites for your characters. The studio writes the prompts and builds the ComfyUI workflow for you.</div>
         <div class="cs-row" role="radiogroup" aria-label="Image generator">
-            ${[['', 'Off'], ['comfy', 'ComfyUI'], ['st', 'SillyTavern Image Generation']].map(([v, label]) => html`<${Button} key=${v} small label=${label} ariaPressed=${s.backend === v}
+            ${[['', 'Off'], ['comfy', 'ComfyUI'], ['st', 'SillyTavern Image Generation'], ['nanogpt', 'NanoGPT']].map(([v, label]) => html`<${Button} key=${v} small label=${label} ariaPressed=${s.backend === v}
                 disabled=${v === 'st' && !stImagine} title=${v === 'st' && !stImagine ? 'Enable the Image Generation extension in SillyTavern first' : ''} onClick=${() => { set({ backend: v }); if (v === 'comfy') connect(); }} />`)}
         </div>
         ${s.backend === 'st' && html`<div class="cs-muted cs-small">Uses whatever SillyTavern's Image Generation extension is set to. Expression sprites need ComfyUI.</div>`}
+        ${s.backend === 'nanogpt' && html`<${NanoImageSetup} s=${s} set=${set} />`}
         ${s.backend === 'comfy' && html`<div class="cs-stack">
             <div class="cs-row">
                 <input class="text_pole cs-input cs-mono" style="flex:1;min-width:220px" value=${s.url} aria-label="ComfyUI address"

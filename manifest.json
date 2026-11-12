@@ -6,9 +6,9 @@
     "dependencies": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "rustyorb",
-    "version": "1.2.1",
-    "homePage": "https://github.com/rustyorb/SillyTavern-CreativeStudio",
+    "author": "rustyorb; NanoGPT scene-illustration fork by SirEdvin",
+    "version": "1.3.0",
+    "homePage": "https://github.com/SirEdvin/SillyTavern-CreativeStudio",
     "auto_update": false,
     "minimum_client_version": "1.19.0"
 }

@@ -11,6 +11,16 @@ Open Creative Studio with the feather in SillyTavern’s top bar, or **Ctrl+Shif
 
 AI generation uses the connection selected in **AI setup** and your provider’s normal usage terms. Importing, editing and exporting do not need an AI connection.
 
+## Illustrate the current chat with NanoGPT (1.3.0 fork)
+
+After importing the active character through **From SillyTavern**, keep that character's chat open and go to **Pictures → Image settings → NanoGPT**. Enter a session-only key, choose an image-editing model (for example `bytedance/seedream-v5.5` or `hidream-o1-image`), and leave output resolution on **Auto** to use a supported size. Your existing creation text connection is used for scene analysis; it can also be NanoGPT.
+
+Press **Illustrate current scene**. Studio automatically loads the selected portrait, sends recent visible messages and card context to the text LLM, then sends its editing instructions and the re-encoded portrait to NanoGPT. Clothes, surroundings, pose and framing follow the latest scene; identity and drawing style are anchored to the reference. Optional visual direction is available but not required. The result is previewed and saved in the gallery without changing the avatar or adding a chat message.
+
+The default context is 12 messages (configurable up to 40, also text-bounded). The action currently supports one-character chats, and refuses a chat belonging to another character. Missing references and unsupported models never fall back to a fresh text-to-image person. **Cancel scene illustration** stops further stages; an image request already submitted may still be billed. There are no automatic image retries.
+
+Session keys are kept only in memory; re-enter after reloading the page. Stored ST keys are optional and only work if that server already permits API-key exposure to extensions; Studio does not enable it. Never run two copies of Creative Studio at once. See the [full setup and privacy notes](../README.md#nanogpt-scene-illustration).
+
 ## Remix two characters (1.2.0)
 
 Open **Characters → Remix two characters**, then choose two cards already imported into your project. Studio

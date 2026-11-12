@@ -45,13 +45,15 @@ export async function mediaBytes(env, media) {
 }
 
 /** Keep async image results attached to their original project and character, including during file saves. */
-export async function saveCharacterPicture(env, store, projectId, characterId, bytes, { purpose, prompt, seed, label, referenceMediaId, method } = {}) {
+export async function saveCharacterPicture(env, store, projectId, characterId, bytes, { purpose, prompt, seed, label, referenceMediaId, method, scene, beforeAttach } = {}) {
+    beforeAttach?.();
     const character = pictureTarget(store.get(), projectId, characterId);
     const { media, apply } = await saveMedia(env, store.get(), bytes, {
         name: `${character.card.data.name} — ${label ?? purpose}`, role: label ? 'sprite' : 'generated',
     });
-    Object.assign(media, { purpose, prompt, seed, ...(label ? { label, referenceMediaId, method } : {}) });
+    Object.assign(media, { purpose, prompt, seed, ...(referenceMediaId ? { referenceMediaId } : {}), ...(scene ? { scene } : {}), ...(label ? { label, method } : {}) });
     pictureTarget(store.get(), projectId, characterId);
+    beforeAttach?.();
     store.update(p => {
         const current = pictureTarget(p, projectId, characterId);
         let next = apply(p);
