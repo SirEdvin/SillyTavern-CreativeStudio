@@ -7,7 +7,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "rustyorb; NanoGPT scene-illustration fork by SirEdvin",
-    "version": "1.3.4",
+    "version": "1.3.5",
     "homePage": "https://github.com/SirEdvin/SillyTavern-CreativeStudio",
     "auto_update": false,
     "minimum_client_version": "1.19.0"

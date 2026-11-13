@@ -69,6 +69,14 @@ The key is an explicit fixture value, not a real credential. The account metadat
 
 Scene-composition regressions verify first-person user POV in the default/overridden LLM prompt and the final outgoing image instruction, exclusion of the user/body/reflections/shadows, conflicting staging, exact persisted prompt and provider-length bounds. Browser payload checks cover both the headless More action and the Pictures preview. Fixtures cannot establish visual compliance by a live image model.
 
+## First portraits, reference edits and the regular creation pipeline
+
+The same local harness exposes `await window.runPortraitTests({scenario:"dual"})`. Open the fixture tab in the foreground to avoid background timer/animation throttling. Run each scenario after a fresh navigation: `dual`, `text-only`, `provider-error`, `missing-reference`, `pipeline`, `pipeline-provider-error`, `pipeline-save-error`.
+
+These exercise the actual Pictures button and actual `runPipeline`/`makeRunTask` path: first portrait without `input_references`, persistence and automatic avatar selection; next picture with the chosen portrait; explicit reference opt-out; text-only model discovery and unsupported edit refusal; missing selected references; provider/save errors with zero automatic paid retries. The portrait fixture explicitly uses an SFW project and verifies that both reference-enabled and opt-out requests include the saved exclusions and content rating. Ordinary portraits do not inherit scene POV constraints or SDXL photographic negatives. Submitted prompt provenance is exact. Tests await the fixture-host-ready signal before changing store state.
+
+Unit coverage includes `tests/nanogpt-paint.test.js`, configuration readiness/automatic art steps, separate explicit text/edit provider entrypoints, reference preservation, cancellation/ownership guards, no retries, and model-specific prompt limits in UTF-16/code-point units.
+
 ## Public API smoke check (no key, no generation charges)
 
 The real adapter's `nanoModels()` and `nanoModelMetadata(id)` functions can be called against NanoGPT to confirm public discovery, model-specific reference support and supported resolutions. Catalog aliases and endpoint availability can differ; manual IDs are supported but validated through endpoint metadata before generation.

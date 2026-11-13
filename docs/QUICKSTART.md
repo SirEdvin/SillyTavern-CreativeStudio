@@ -11,7 +11,11 @@ Open Creative Studio with the feather in SillyTavern’s top bar, or **Ctrl+Shif
 
 AI generation uses the connection selected in **AI setup** and your provider’s normal usage terms. Importing, editing and exporting do not need an AI connection.
 
-## Illustrate the current chat with NanoGPT (1.3.4 fork)
+## Create the first portrait with NanoGPT (1.3.5 fork)
+
+Select NanoGPT in Image settings, save your key, and choose a generation-capable image model. No portrait upload is needed for a new character. Write a picture prompt and press **Generate picture**; the first portrait is saved and selected as the avatar. Subsequent pictures can use it as their reference, or you can explicitly uncheck the reference option to generate a fresh picture from text. The regular creation pipeline can also run its selected **Portrait** step through NanoGPT. Image/provider/save failures are not automatically retried. Model-specific prompt limits are checked before image submission; shorten an overlong prompt rather than losing its identity/style constraints to silent truncation.
+
+## Illustrate the current chat with NanoGPT (1.3.5 fork)
 
 After importing the active character through **From SillyTavern**, keep that character's chat open and go to **Pictures → Image settings → NanoGPT**. Enter your key and press **Save key**, choose an image-editing model (for example `bytedance/seedream-v5.5` or `hidream-o1-image`), and leave output resolution on **Auto** to use a supported size. Your existing creation text connection is used for scene analysis; it can also be NanoGPT.
 

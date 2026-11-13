@@ -22,10 +22,11 @@ export function makeRunTask(store, env, onStatus = () => {}) {
         if (taskId === 'image.portrait') {
             // Painting, not writing: the picture is saved as project media and handed to the step.
             const t0 = Date.now();
+            const label = {nanogpt:'NanoGPT',comfy:'ComfyUI',st:'SillyTavern Image Generation'}[imageSettings().backend] ?? 'Image generator';
             const r = await paint({ prompt: args.prompt, negative: args.negative, purpose: args.purpose, rating: imageRating(contentOf(store.get())), signal });
             const { media } = await saveMedia(env, store.get(), r.bytes, { name: args.name ?? 'portrait', role: 'generated' });
             Object.assign(media, { prompt: r.positive, seed: r.seed, purpose: args.purpose });
-            return { value: { media }, generation: { task: taskId, label: 'ComfyUI', durationMs: Date.now() - t0 } };
+            return { value: { media }, generation: { task: taskId, label, model: r.model ?? '', durationMs: Date.now() - t0 } };
         }
         const task = getTask(taskId);
         const { system, user } = buildTask(taskId, args, { overrides: promptOverrides(), content: contentOf(store.get()) });

@@ -82,6 +82,12 @@ test('a failed step blocks its dependents but not independent steps; retry resum
     assert.equal(h.project.characters.length, 1, 'no duplicate character on retry');
 });
 
+test('portrait generation is never retried automatically after a provider or file-save failure',async()=>{
+    const h=harness({'image.portrait':new Error('Provider/file-save failed; an image may already be billed')});
+    const run=await runPipeline({...h.opts,run:newRun({steps:['premise','concept','card','images','art']})});
+    assert.equal(run.steps.art.status,'failed');assert.equal(h.calls.filter(c=>c.task==='image.portrait').length,1);
+});
+
 test('a step that fails once is retried automatically before it counts as failed', async () => {
     let n = 0;
     const h = harness({ 'lore.structure': () => { if (n++ === 0) throw new Error('No answer after 240 s'); return FAKE['lore.structure']; } });

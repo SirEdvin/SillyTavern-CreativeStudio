@@ -1,8 +1,8 @@
-// NanoGPT setup keeps secrets out of settings and offers the provider's real editable-model catalog.
+// NanoGPT setup keeps secrets out of settings and offers generation/editing models from the provider catalog.
 import { html, useState, useEffect, Button, cx } from './kit.js';
 import { stContext } from '../st/env.js';
 import { initNanoKeyStore } from '../st/nano-key-store.js';
-import { nanoModels, nanoModelMetadata, nanoCanEdit, nanoResolutions, nanoStoredKeys, saveNanoKey, forgetNanoKey, hasNanoKey } from '../st/nanogpt.js';
+import { nanoModels, nanoModelMetadata, nanoCanEdit, nanoCanGenerate, nanoResolutions, nanoStoredKeys, saveNanoKey, forgetNanoKey, hasNanoKey } from '../st/nanogpt.js';
 
 export function NanoImageSetup({ s, set }) {
     const ctx = stContext();
@@ -26,14 +26,14 @@ export function NanoImageSetup({ s, set }) {
         const timer = setTimeout(() => {
             if (!s.nanoModel) return;
             nanoModelMetadata(s.nanoModel, { signal: controller.signal }).then(data => {
-                if (!controller.signal.aborted) { setMetadata(data); setError(nanoCanEdit(data) ? '' : 'This model does not advertise reference-image editing. Choose another model.'); }
+                if (!controller.signal.aborted) { setMetadata(data); setError(nanoCanEdit(data) || nanoCanGenerate(data) ? '' : 'This model does not advertise image generation or reference editing. Choose another model.'); }
             }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
         }, 300);
         return () => { clearTimeout(timer); controller.abort(); };
     }, [s.nanoModel]);
     const loadModels = async () => {
         setLoading(true); setError('');
-        try { const list = await nanoModels(); setModels(list.filter(m => m.canEdit)); setStatus(`Loaded ${list.filter(m => m.canEdit).length} reference-editing models. No image credits were spent.`); }
+        try { const list = (await nanoModels()).filter(m => m.canEdit || m.canGenerate); setModels(list); setStatus(`Loaded ${list.length} image models. No image credits were spent.`); }
         catch (e) { setError(e.message); }
         finally { setLoading(false); }
     };
@@ -52,7 +52,7 @@ export function NanoImageSetup({ s, set }) {
         catch (error) { setError(error.message); }
     };
     return html`<div class="cs-stack cs-nanogpt-setup">
-        <p class="cs-muted cs-small">NanoGPT edits the character’s existing portrait. Scene illustration sends the portrait and LLM-written instructions to NanoGPT; recent chat text goes to your creation LLM. Each click makes a paid image request. Nothing runs automatically.</p>
+        <p class="cs-muted cs-small">NanoGPT creates the first portrait from text; pictures with a selected reference use image editing instead. Scene illustration always requires the original portrait and sends recent chat to your creation LLM. Requested picture generations and selected creation-pipeline image steps consume image credits or subscription quota. Loading settings/models does not generate images.</p>
         <label class="cs-field"><span>NanoGPT API key</span>
             <input type="password" class="text_pole cs-input" aria-label="NanoGPT API key" autocomplete="off" value=${key} onInput=${e => setKey(e.currentTarget.value)} placeholder=${keyReady ? 'A key is ready; save a new key to replace it' : 'Saved in this browser, not in projects or exports'} />
         </label>
@@ -71,11 +71,12 @@ export function NanoImageSetup({ s, set }) {
                 ${keys.map(k => html`<option value=${k.id}>${k.label}${k.active ? ' (active)' : ''}</option>`)}
             </select></label>
         </details>
-        <label class="cs-field"><span>Image-editing model ID</span>
+        <label class="cs-field"><span>Image model ID</span>
             <input class="text_pole cs-input cs-mono" aria-label="NanoGPT image model ID" list="cs-nanogpt-models" value=${s.nanoModel} onChange=${e => set({ nanoModel: e.currentTarget.value.trim(), nanoResolution: 'auto' })} />
-            <datalist id="cs-nanogpt-models">${models.map(m => html`<option value=${m.id}>${m.name ?? m.id}</option>`)}</datalist>
+            <datalist id="cs-nanogpt-models">${models.map(m => html`<option value=${m.id}>${m.name ?? m.id}${m.canEdit ? ' — reference editing' : ' — text-to-image'}</option>`)}</datalist>
         </label>
-        <${Button} small label=${loading ? 'Loading models…' : 'Load editing models'} onClick=${loadModels} disabled=${loading} />
+        <${Button} small label=${loading ? 'Loading models…' : 'Load image models'} onClick=${loadModels} disabled=${loading} />
+        ${metadata && html`<p class="cs-muted cs-small">Advertised capabilities: ${nanoCanGenerate(metadata) ? 'image generation' : 'no text-to-image generation'}; ${nanoCanEdit(metadata) ? 'reference editing' : 'no reference editing'}. Use a generation-capable model for a first portrait; editing-only models may require an input image.</p>`}
         <p class="cs-muted cs-small">Examples: bytedance/seedream-v5.5, hidream-o1-image, hidream-o1-image-dev, google/gemini-nano-banana-2.1. Availability and prices come from NanoGPT, not Studio.</p>
         <label class="cs-field"><span>Output resolution</span><select class="text_pole cs-input" aria-label="NanoGPT output resolution" value=${s.nanoResolution} onChange=${e => set({ nanoResolution: e.currentTarget.value })}>
             <option value="auto">Auto (supported model default)</option>

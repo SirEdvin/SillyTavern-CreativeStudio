@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nanoModels, generateNanoImage, setNanoSessionKey, hasNanoSessionKey, nanoStoredKeys, nanoRequest, nanoResolution } from '../src/st/nanogpt.js';
+import { nanoModels, generateNanoImage, generateNanoTextImage, nanoCanGenerate, setNanoSessionKey, hasNanoSessionKey, nanoStoredKeys, nanoRequest, nanoResolution } from '../src/st/nanogpt.js';
 
 const model = { id: 'editor', name: 'Editor', architecture: { input_modalities: ['text', 'image'] },
     supported_parameters: { resolutions: ['1k', '2k'], max_input_images: 1 },
@@ -24,6 +24,52 @@ function setup({ response = { data: [{ b64_json: 'iVBORw0KGgo=' }] }, metadata =
     };
     return { calls, ctx, fetcher, run: options => generateNanoImage({ settings: { nanoModel: 'editor', nanoResolution: '1k' }, reference: png, instruction: 'Edit the reference into a rainy railway scene.', ctx, fetcher, prepare: async () => prepared, ...options }) };
 }
+
+test('deliberate text generation sends no reference and never invokes reference preparation',async()=>{
+    const f=setup({metadata:{...meta,capabilities:{image_generation:true}}});
+    const result=await generateNanoTextImage({settings:{nanoModel:'editor'},instruction:'An anime portrait.',ctx:f.ctx,fetcher:f.fetcher,prepare:async()=>{throw new Error('Must not prepare a missing reference')}});
+    const body=JSON.parse(f.calls.find(c=>c.url.endsWith('/images')).options.body);
+    assert.equal(body.input_references,undefined);assert.equal(body.prompt,'An anime portrait.');assert.deepEqual(result.bytes,png);
+});
+
+test('explicit text-generation restrictions and mandatory-reference constraints override general image flags',()=>{
+    assert.equal(nanoCanGenerate({capabilities:{image_generation:true}}),true);
+    assert.equal(nanoCanGenerate({capabilities:{image_to_image:true}}),false);
+    for(const item of [
+        {capabilities:{image_generation:true,text_to_image:false}},
+        {capabilities:{image_generation:false,text_to_image:true}},
+        {capabilities:{image_generation:true},input_reference_constraints:{min_items:1}},
+        {capabilities:{image_generation:true},supported_parameters:{min_input_images:1}},
+        {capabilities:{image_generation:true},supported_parameters:{input_image_constraints:{min_items:1}}},
+    ])assert.equal(nanoCanGenerate({endpoints:[item]}),false);
+});
+
+test('text mode never discards supplied references and rejects missing keys, cancellation or stale ownership before payment',async()=>{
+    const f=setup({metadata:{...meta,capabilities:{image_generation:true}}});
+    const options={settings:{nanoModel:'editor'},instruction:'Portrait.',ctx:f.ctx,fetcher:f.fetcher};
+    await assert.rejects(generateNanoTextImage({...options,reference:png}),/reference editing/i);
+    const ac=new AbortController();ac.abort();await assert.rejects(generateNanoTextImage({...options,signal:ac.signal}),/abort|cancel/i);
+    await assert.rejects(generateNanoTextImage({...options,beforeSubmit:async()=>{throw new Error('stale ownership')}}),/stale ownership/);
+    setNanoSessionKey('',f.ctx);await assert.rejects(generateNanoTextImage(options),/key/i);
+    assert.equal(f.calls.filter(c=>c.url.endsWith('/images')).length,0);
+});
+
+test('both image modes enforce model-specific prompt limits without truncation or paid submission',async()=>{
+    for(const edit of [false,true]){
+        const f=setup({metadata:{...meta,capabilities:{image_generation:true},supported_parameters:{max_prompt_characters:10,prompt_length:{unit:'utf16_code_units'}}}});
+        await assert.rejects((edit?generateNanoImage:generateNanoTextImage)({settings:{nanoModel:'editor'},...(edit?{reference:png}:{}),instruction:'This prompt is too long.',ctx:f.ctx,fetcher:f.fetcher}),/at most 10/);
+        assert.equal(f.calls.filter(c=>c.url.endsWith('/images')).length,0);
+    }
+    const f=setup({metadata:{capabilities:{image_generation:true},supported_parameters:{max_prompt_characters:2,prompt_length:{unit:'unicode_code_points'}}}});
+    await generateNanoTextImage({settings:{nanoModel:'editor'},instruction:'😀😀',ctx:f.ctx,fetcher:f.fetcher});
+    assert.equal(JSON.parse(f.calls.find(c=>c.url.endsWith('/images')).options.body).prompt,'😀😀');
+});
+
+test('text generation failures are not retried and return no fake success',async()=>{
+    const f=setup({metadata:{...meta,capabilities:{image_generation:true}},response:{error:'fixture failure'}});
+    await assert.rejects(generateNanoTextImage({settings:{nanoModel:'editor'},instruction:'Portrait.',ctx:f.ctx,fetcher:f.fetcher}),/rejected/i);
+    assert.equal(f.calls.filter(c=>c.url.endsWith('/images')).length,1);
+});
 
 test('asynchronous saved-message guard must finish successfully before any paid request', async () => {
     const f=setup();let checked=false;
