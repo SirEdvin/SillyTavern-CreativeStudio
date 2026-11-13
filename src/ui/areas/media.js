@@ -9,7 +9,7 @@ const HOW = { avatar: 'avatar', gallery: 'gallery picture' };
 const ORIGIN = { avatar: 'Portrait', generated: 'Generated in the studio', sprite: 'Expression sprite', 'charx-asset': 'File from a CHARX card', image: 'Added picture' };
 
 /** "avatar", "sprite: joy", "CHARX file assets/…": how one character uses the picture. */
-export const usageLabel = u => (u.how === 'sprite' ? `sprite: ${u.label}` : u.how === 'asset' ? `CHARX file ${u.path}` : HOW[u.how]);
+export const usageLabel = u => (u.how === 'sprite' ? `sprite: ${u.label}` : u.how === 'asset' ? `CHARX file ${u.path}` : u.how === 'opening' ? `Opening illustration: ${u.label}` : HOW[u.how]);
 
 const size = n => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round((n ?? 0) / 1024))} KB`);
 

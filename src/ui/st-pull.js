@@ -9,6 +9,7 @@ import { normalizeWorld } from '../core/lorebook.js';
 import { pickSprites } from '../core/sprites.js';
 import { uid } from '../core/bytes.js';
 import { saveMedia } from './media.js';
+import {hydrateOpeningMedia} from './opening-assets.js';
 
 const MAX_SHOWN = 150;
 const pulls = new WeakMap();
@@ -84,6 +85,8 @@ async function pullCharacterIntoProject(store, env, avatar, project, { onStep = 
     media.push(pic);
     art.avatarMediaId = pic.media.id;
     art.links.media = [pic.media.id];
+    const restoredOpenings=await hydrateOpeningMedia(art,imported,env,project,{guard:assertProject});
+    media.push(...restoredOpenings.saves);notes.push(...restoredOpenings.notes);
 
     // Its lorebook: SillyTavern links a character to a World Info book by name.
     let lorebook = null;

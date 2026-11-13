@@ -115,27 +115,29 @@ export function TextArea({ label, value, onChange, rows = 6, hint, counter, acti
 }
 
 /** Editable list of strings (tags, keys, greetings). */
-export function StringList({ label, items, onChange, multiline, placeholder, hint, actions, addLabel = 'Add' }) {
+export function StringList({ label, items, onChange, multiline, placeholder, hint, actions, renderAfter, onMove, onRemove, addLabel = 'Add' }) {
     const list = items ?? [];
     const set = (i, v) => onChange(list.map((x, j) => (j === i ? v : x)));
     const move = (i, d) => {
         const j = i + d;
         if (j < 0 || j >= list.length) return;
+        if(onMove){onMove(i,j);return}
         const next = [...list];
         [next[i], next[j]] = [next[j], next[i]];
         onChange(next);
     };
     return html`<${Field} label=${`${label} (${list.length})`} hint=${hint} meta=${actions} wide>
         <div class="cs-strlist">
-            ${list.map((item, i) => html`<div class="cs-strlist-row" key=${i}>
+            ${list.map((item, i) => html`<div class="cs-strlist-row" key=${i} style=${renderAfter?'flex-wrap:wrap':undefined}>
                 ${multiline
                     ? html`<textarea class="text_pole cs-textarea" rows="4" value=${item} onInput=${e => set(i, e.currentTarget.value)}></textarea>`
                     : html`<input class="text_pole cs-input" value=${item} onInput=${e => set(i, e.currentTarget.value)} />`}
                 <div class="cs-strlist-tools">
                     <${Button} small icon="arrow-up" title="Move up" onClick=${() => move(i, -1)} disabled=${i === 0} />
                     <${Button} small icon="arrow-down" title="Move down" onClick=${() => move(i, 1)} disabled=${i === list.length - 1} />
-                    <${Button} small icon="trash" title="Remove" kind="danger" onClick=${() => onChange(list.filter((_, j) => j !== i))} />
+                    <${Button} small icon="trash" title="Remove" kind="danger" onClick=${() => onRemove?onRemove(i):onChange(list.filter((_, j) => j !== i))} />
                 </div>
+                ${renderAfter&&html`<div style="flex-basis:100%;width:100%">${renderAfter(item,i)}</div>`}
             </div>`)}
             <${Button} small icon="plus" label=${addLabel} onClick=${() => onChange([...list, placeholder ?? ''])} />
         </div>

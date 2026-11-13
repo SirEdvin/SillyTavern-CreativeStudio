@@ -19,7 +19,12 @@ export function embeddedPath(uri) {
  * @returns {{ card: any, topLevelExtras: any, report: any[], files: Record<string, Uint8Array>, assets: {asset: any, path: string|null, bytes: Uint8Array|null}[], diagnostics: string[] }}
  */
 export function readCharx(bytes) {
-    const files = unzipSync(bytes);
+    let expanded=0,count=0;
+    const files = unzipSync(bytes,{filter:file=>{
+        const size=file.originalSize;
+        if(++count>512||!Number.isSafeInteger(size)||size<0||size>128*1024*1024||(expanded+=size)>256*1024*1024)throw new Error('CHARX archive exceeds the safe expansion limit.');
+        return true;
+    }});
     const diagnostics = [];
     const cardName = Object.keys(files).find(n => n.replace(/^\/+/, '') === 'card.json');
     if (!cardName) throw new Error('CHARX has no card.json at the archive root');

@@ -129,4 +129,7 @@ window.toastr={error(message){calls.push({type:'shortcut-error',message})},succe
 window.sceneHarness={store,ctx,calls,event,env,stFiles,realFetch,original,project,character,setMode:value=>{mode=value},setSavedChat:value=>{savedChat=structuredClone(value)},getSavedChat:()=>savedChat};
 await import('/tests/browser/chat-menu-tests.js');
 await import('/tests/browser/portrait-tests.js');
+await import('/tests/browser/opening-tests.js');
+await import('/tests/browser/opening-portability-tests.js');
+await import('/tests/browser/opening-corruption-tests.js');
 </script></body></html>

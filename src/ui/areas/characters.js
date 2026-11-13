@@ -32,6 +32,10 @@ import { CHARACTER_TABS, TAB_HELP, characterProgress } from '../../core/workflow
 import { CharacterLibrary } from '../character-library.js';
 import { RemixLauncher, RemixReport } from '../character-remix.js';
 import { navigateStudio } from '../guide.js';
+import { OpeningIllustrationControls } from '../opening-illustrations.js';
+import {collectOpeningExport,verifyOpeningImages} from '../opening-assets.js';
+import {openingStorageError,reorderOpeningAlternates} from '../../core/opening-illustrations.js';
+import {isOpeningAssetPath} from '../../core/opening-assets.js';
 
 export function CharactersArea(props) {
     const { project, selection } = props;
@@ -161,7 +165,7 @@ function CharacterEditor(props) {
     const [advanced, setAdvanced] = useState(false);
     const progress = characterProgress(ch);
     const d = ch.card.data;
-    const setPath = (path, value, summary) => store.update(p => editArtifactField(p, 'characters', ch.id, path, value, { summary }), `edit ${path}`);
+    const setPath = (path, value, summary, options) => store.update(p => editArtifactField(p, 'characters', ch.id, path, value, { summary }), `edit ${path}`,options);
     const setData = (field, value) => setPath(`card.data.${field}`, value, `Edited ${CARD_FIELDS[field] ?? field}`);
     const issues = useMemo(() => validateCardV3(ch.card), [ch.card]);
     const pendingCount = project.proposals.filter(p => p.status === 'pending' && p.target.id === ch.id).length;
@@ -345,6 +349,7 @@ function CoreTab(p) {
 
 function GreetingsTab(p) {
     const { d, setData, store, ch, project } = p;
+    const reorder=order=>p.setPath('card',reorderOpeningAlternates(ch.card,order),'Reordered alternate openings',{merge:false});
     const ai = useAiTask(store);
     const [direction, setDirection] = useState('');
     const context = characterContext({ store, project, ch, field: 'alternate_greetings' });
@@ -361,6 +366,8 @@ function GreetingsTab(p) {
     };
     return html`
         <${AiField} ...${p} field="first_mes" label="First message" rows=${8} />
+        <${OpeningIllustrationControls} store=${store} env=${p.env} project=${project} ch=${ch} slotKey="first" />
+        <p class="cs-muted cs-small">Opening illustrations are saved with the character and included when you apply/export the card. They are reused in new chats, not generated on every chat or save. Existing chat messages are not rewritten. Use CHARX to carry illustration files between installations.</p>
         <div class="cs-ai-box">
             <div class="cs-row">
                 <input class="text_pole" style="flex:1" placeholder="Direction for new openings (optional): different place, time, mood, relationship stage…" value=${direction} onInput=${e => setDirection(e.currentTarget.value)} aria-label="Greeting direction" />
@@ -370,7 +377,10 @@ function GreetingsTab(p) {
             <${AiStatus} ai=${ai} />
         </div>
         <${PendingFor} store=${store} project=${project} type="characters" id=${ch.id} path="card.data.alternate_greetings" />
-        <${StringList} label="Alternate greetings" items=${d.alternate_greetings} multiline onChange=${v => setData('alternate_greetings', v)} addLabel="Add greeting" hint="Offered as swipes on the first message." />
+        <${StringList} label="Alternate greetings" items=${d.alternate_greetings} multiline onChange=${v => setData('alternate_greetings', v)} addLabel="Add greeting" hint="Offered as swipes on the first message."
+            onMove=${(from,to)=>{const order=(d.alternate_greetings??[]).map((_,i)=>i);[order[from],order[to]]=[order[to],order[from]];reorder(order)}}
+            onRemove=${index=>reorder((d.alternate_greetings??[]).map((_,i)=>i).filter(i=>i!==index))}
+            renderAfter=${(_text,i)=>html`<${OpeningIllustrationControls} store=${store} env=${p.env} project=${project} ch=${ch} slotKey=${`alt:${i}`} />`} />
         <${PendingFor} store=${store} project=${project} type="characters" id=${ch.id} path="card.data.group_only_greetings" />
         <${StringList} label="Group-only greetings (V3)" items=${d.group_only_greetings} multiline onChange=${v => setData('group_only_greetings', v)} addLabel="Add group greeting"
             hint="Valid V3 and required by the spec (may be empty). SillyTavern 1.19 stores but does not use them." />
@@ -576,6 +586,7 @@ function PublishTab({ store, env, project, ch, d }) {
     const assetFiles = async () => {
         const out = {};
         for (const [path, mid] of Object.entries(ch.assetFiles ?? {})) {
+            if(isOpeningAssetPath(path))continue;
             const m = findArtifact(project, 'media', mid);
             if (m) out[path] = await mediaBytes(env, m);
         }
@@ -584,7 +595,8 @@ function PublishTab({ store, env, project, ch, d }) {
     const doExport = async kind => {
         setBusy(kind);
         try {
-            let card = ch.card;
+            let card = cardForSt(project,ch);
+            const openings=kind==='charx'?await collectOpeningExport(env,project,ch):{};
             let files = kind === 'charx' ? await assetFiles() : {};
             if (kind === 'charx' && Object.keys(ch.sprites ?? {}).length) {
                 // Expression sprites ride along as emotion assets; SillyTavern's CHARX import makes them sprites again.
@@ -597,7 +609,7 @@ function PublishTab({ store, env, project, ch, d }) {
                 card = withSprites.card;
                 files = { ...files, ...withSprites.files };
             }
-            const r = exportCard(kind, { card, topLevelExtras: ch.topLevelExtras, image: await cardImage(), assetFiles: files });
+            const r = exportCard(kind, { card, topLevelExtras: ch.topLevelExtras, image: await cardImage(), assetFiles: files, ...openings });
             downloadBlob(r.bytes, `${safeName(d.name)}.${r.ext}`, r.mime);
             setLastNotes(r.notes);
             store.update(p => logHistory(p, { target: { type: 'characters', id: ch.id }, action: 'export', summary: `Exported ${kind}` }), 'export');
@@ -608,16 +620,19 @@ function PublishTab({ store, env, project, ch, d }) {
         setBusy('apply');
         try {
             const current = await getStCharacter(linked);
-            const diff = jsonDiff(current?.data ?? {}, cardForSt(project, ch).data, 'data').filter(x => !/^data\.extensions\.(fav)$/.test(x.path));
-            setReview({ current, diff });
+            const card=cardForSt(project,ch);
+            const diff = jsonDiff(current?.data ?? {}, card.data, 'data').filter(x => !/^data\.extensions\.(fav)$/.test(x.path));
+            setReview({ current, diff, card });
         } catch (e) { env.toast(`Could not read ${linked} from SillyTavern: ${e.message}`, 'error'); } finally { setBusy(''); }
     };
     const apply = async () => {
         setBusy('apply');
         try {
             await env.storage.saveSnapshot(store.get(), `Before applying ${d.name} to SillyTavern`, 'auto').catch(() => {});
-            const { backup, fidelity, renamed } = await applyCardToSt(linked, cardForSt(project, ch), ch.topLevelExtras);
+            if(JSON.stringify(cardForSt(project,ch))!==JSON.stringify(review.card))throw new Error('The character changed since review. Review its changes again before applying.');
+            const { backup, fidelity, renamed, openingError, error } = await applyCardToSt(linked, review.card, ch.topLevelExtras);
             recordBackup(store, backup, `Applied ${d.name} to SillyTavern (${linked})`);
+            if(error||openingError)throw new Error(error||openingError);
             setLastNotes([
                 'Applied through /api/characters/merge-attributes. The previous version is saved under Snapshots → Live SillyTavern backups.',
                 ...(renamed ? ['Name changes are not applied to the ST file name; use ST’s rename if needed.'] : []),
@@ -632,12 +647,14 @@ function PublishTab({ store, env, project, ch, d }) {
         setBusy('create');
         try {
             const card = cardForSt(project, ch);
+            await verifyOpeningImages(card);
             const r = exportCard('png-v3', { card, topLevelExtras: ch.topLevelExtras, image: await cardImage() });
             const avatar = await importIntoSt(r.bytes, 'png', `${safeName(d.name)}.png`);
             const stored = await getStCharacter(avatar);
             const { fidelityReport } = await import('../../st/live.js');
             const fid = fidelityReport(card, stored);
             store.update(p => logHistory(editArtifactField(p, 'characters', ch.id, 'stAvatar', avatar, { summary: `Created in SillyTavern as ${avatar}` }), { actor: 'st', action: 'create-live', target: { type: 'characters', id: ch.id }, summary: `Created ${avatar} in SillyTavern` }), 'create in ST');
+            const openingError=openingStorageError(card,stored);if(openingError)throw new Error(`Created ${avatar}. ${openingError}`);
             setLastNotes([`Created ${avatar}.`, ...(fid.length ? [`Differences after ST import: ${fid.slice(0, 8).map(f => `${f.kind} ${f.path}`).join('; ')}`] : ['Verified: SillyTavern stored the card data unchanged.'])]);
             env.toast(`Created ${avatar} in SillyTavern`, 'ok');
         } catch (e) { env.toast(`Create failed: ${e.message}`, 'error', 8000); } finally { setBusy(''); }

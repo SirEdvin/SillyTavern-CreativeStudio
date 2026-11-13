@@ -19,6 +19,9 @@ import { Generator } from '../generator.js';
 import { CARD_FILES, importAnyFile, openCardImport } from '../importer.js';
 import { openPullPicker } from '../st-pull.js';
 import { CharacterLibrary } from '../character-library.js';
+import {collectOpeningExport,verifyOpeningImages} from '../opening-assets.js';
+import {openingStorageError} from '../../core/opening-illustrations.js';
+import {isOpeningAssetPath} from '../../core/opening-assets.js';
 const AREA_FOR_TYPE = { characters: 'characters', lorebooks: 'lore', presets: 'prompts', regexScripts: 'regex', qrSets: 'scripts', media: 'characters' };
 
 export function ProjectArea({ store, env, project, select, setArea }) {
@@ -104,20 +107,23 @@ export function projectHealth(project) {
     return out;
 }
 
-async function characterImages(env, project) {
+async function characterImages(env, project, includeCharx) {
     const images = {};
     const assets = {};
+    const openings = {};
     for (const c of project.characters) {
         const m = c.avatarMediaId ? findArtifact(project, 'media', c.avatarMediaId) : null;
         if (m) images[c.id] = await toPngBytes(await mediaBytes(env, m));
         const files = {};
         for (const [path, mid] of Object.entries(c.assetFiles ?? {})) {
+            if(isOpeningAssetPath(path))continue;
             const mm = findArtifact(project, 'media', mid);
             if (mm) files[path] = await mediaBytes(env, mm);
         }
         assets[c.id] = files;
+        if(includeCharx)openings[c.id]=await collectOpeningExport(env,project,c);
     }
-    return { images, assets };
+    return { images, assets, openings };
 }
 
 function PublishModal({ store, env, project, onClose }) {
@@ -129,8 +135,8 @@ function PublishModal({ store, env, project, onClose }) {
     const build = async () => {
         setBusy(true);
         try {
-            const { images, assets } = await characterImages(env, project);
-            const b = buildBundle(project, { cardFormat, includeCharx, images, assetFiles: assets });
+            const { images, assets, openings } = await characterImages(env, project, includeCharx);
+            const b = buildBundle(project, { cardFormat, includeCharx, images, assetFiles: assets, openings });
             const zip = zipSync(Object.fromEntries(Object.entries(b.files).map(([k, v]) => [k, [v, { level: /\.(png|charx)$/.test(k) ? 0 : 6 }]])));
             downloadBlob(zip, `${project.name.replace(/[^\w.-]+/g, '_')}-bundle.zip`, 'application/zip');
             setResult(b);
@@ -183,13 +189,14 @@ function ApplyPlan({ store, env, project, onClose }) {
             items.push({ key: `ch:${c.id}`, label: linked ? `Update character ${c.card.data.name} (${linked})` : `Create character ${c.card.data.name}`, run: async () => {
                 if (linked) {
                     const r = await applyCardToSt(linked, cardForSt(project, c), c.topLevelExtras);
-                    return { backup: r.backup, note: r.fidelity.length ? `${r.fidelity.length} field difference(s) after save` : 'verified' };
+                    return { backup: r.backup, error:r.error||r.openingError, note: r.fidelity.length ? `${r.fidelity.length} field difference(s) after save` : 'verified' };
                 }
                 const m = c.avatarMediaId ? findArtifact(project, 'media', c.avatarMediaId) : null;
                 const image = m ? await toPngBytes(await mediaBytes(env, m)) : null;
-                const avatar = await importIntoSt(exportCard('png-v3', { card: cardForSt(project, c), topLevelExtras: c.topLevelExtras, image }).bytes, 'png', `${c.card.data.name}.png`);
+                const card=cardForSt(project,c);await verifyOpeningImages(card);
+                const avatar = await importIntoSt(exportCard('png-v3', { card, topLevelExtras: c.topLevelExtras, image }).bytes, 'png', `${c.card.data.name}.png`);
                 store.update(p => ({ ...p, characters: p.characters.map(x => (x.id === c.id ? { ...x, stAvatar: avatar } : x)) }), 'link ST character');
-                return { note: `created ${avatar}` };
+                return { note: `created ${avatar}`, error:openingStorageError(card,await getStCharacter(avatar)) };
             } });
         }
         if (project.regexScripts.length) items.push({ key: 'rx:global', label: `Replace ST global regex with ${project.regexScripts.length} project script(s)`, run: () => saveStGlobalRegex(project.regexScripts.map(r => clone(r.script))) });
@@ -209,6 +216,7 @@ function ApplyPlan({ store, env, project, onClose }) {
             try {
                 const r = await item.run();
                 if (r?.backup) recordBackup(store, r.backup, item.label);
+                if(r?.error)throw new Error(r.error);
                 out.push({ label: item.label, status: 'ok', note: r?.note ?? '' });
             } catch (e) { out.push({ label: item.label, status: 'error', note: e.message }); }
             setLog([...out]);
