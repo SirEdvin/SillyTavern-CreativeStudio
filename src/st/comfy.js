@@ -3,7 +3,7 @@
 
 import { stContext, stPost } from './env.js';
 import { scheduleSettingsBackup } from './studio-settings.js';
-import { generateNanoImage, hasNanoKey } from './nanogpt.js';
+import { generateNanoImage, generateNanoTextImage, hasNanoKey } from './nanogpt.js';
 import {
     detectFamily, samplingFor, composePrompt, buildTxt2Img, buildExpression, spritePrompts, adoptWorkflow, sizeFor,
     randomSeed, spriteOptions, referenceSize, CUTOUTS, buildKontextExpression, buildKontextEdit, editInstruction, kontextModel, fluxVae,
@@ -11,7 +11,7 @@ import {
 } from '../core/comfy.js';
 
 export const IMAGE_DEFAULTS = {
-    backend: '',            // '' (off) | 'comfy' | 'st' | 'nanogpt' (portrait-reference editing)
+    backend: '',            // '' (off) | 'comfy' | 'st' | 'nanogpt' (text generation and reference editing)
     nanoModel: 'bytedance/seedream-v5.5',
     nanoResolution: 'auto',
     nanoSecretId: '',        // Only a vault ID; browser keys live separately from settings.
@@ -44,17 +44,18 @@ export function imageReady(ctx = stContext()) {
     const s = imageSettings(ctx);
     if (s.backend === 'comfy') return !!(s.url && (s.ckpt || s.workflow));
     if (s.backend === 'st') return !!ctx.SlashCommandParser?.commands?.imagine;
+    if (s.backend === 'nanogpt') return !!s.nanoModel && (!!s.nanoSecretId || hasNanoKey(ctx));
     return false;
 }
 
-/** Reference-only backends must not enable automatic text-to-image portrait generation. */
+/** Configuration readiness; actual model capabilities are validated before any paid request. */
 export function referenceImageReady(ctx = stContext()) {
     const s = imageSettings(ctx);
     return s.backend === 'nanogpt' ? !!s.nanoModel && (!!s.nanoSecretId || hasNanoKey(ctx)) : imageReady(ctx);
 }
 
 export function familyOf(s) {
-    if (s.backend === 'nanogpt') return 'realistic'; // Natural-language editing, not checkpoint tags.
+    if (s.backend === 'nanogpt') return 'realistic'; // Natural-language prompts, not checkpoint tags or SDXL negatives.
     return s.family && s.family !== 'auto' ? s.family : detectFamily(s.ckpt);
 }
 
@@ -97,6 +98,12 @@ export async function comfyRun(url, workflow, signal) {
     return bytes;
 }
 
+function nanoInstruction(prompt, negative, rating) {
+    const subject = String(prompt ?? '').trim();
+    if (!subject) throw new Error('Write an image prompt before generating a picture.');
+    return [subject, rating && `Content rating: ${rating}.`, negative && `Exclude: ${negative}.`].filter(Boolean).join('\n\n');
+}
+
 /**
  * Paint one picture from a written prompt (avatar, full body, background...).
  * @returns {Promise<{ bytes: Uint8Array, seed: number, positive: string, negative: string }>}
@@ -105,7 +112,10 @@ export async function paint({ prompt, negative = '', purpose = 'avatar', rating 
     const ctx = stContext();
     const s = imageSettings(ctx);
     if (s.backend === 'st') return paintWithSt({ prompt, negative, seed });
-    if (s.backend === 'nanogpt') throw new Error('NanoGPT pictures require a reference portrait. Upload or choose the character’s portrait first.');
+    if (s.backend === 'nanogpt') {
+        const instruction = nanoInstruction(prompt, negative, rating);
+        return generateNanoTextImage({ settings: { ...s }, instruction, signal, ctx });
+    }
     if (s.backend !== 'comfy') throw new Error('No image generator set up. Open AI for creation → Images.');
     const family = familyOf(s);
     const p = composePrompt({ prompt, negative, family, rating });
@@ -344,10 +354,10 @@ async function paintIdentityExpressions({ look, labels, rating, seed, reference,
  * a scene in the same art style. Returns null when the server has no Kontext model (the caller paints from words).
  * @param {[number, number]|null} canvas the new picture's size, or null for the picture's own proportions
  */
-export async function paintFromPicture({ reference, instruction, canvas = null, seed = randomSeed(), signal, prepare = prepareReference, findKontext = comfyKontext }) {
+export async function paintFromPicture({ reference, instruction, negative = '', rating = '', canvas = null, seed = randomSeed(), signal, prepare = prepareReference, findKontext = comfyKontext }) {
     const ctx = stContext();
     const s = imageSettings(ctx);
-    if (s.backend === 'nanogpt') return generateNanoImage({ settings: { ...s }, reference, instruction, signal, ctx });
+    if (s.backend === 'nanogpt') return generateNanoImage({ settings: { ...s }, reference, instruction: nanoInstruction(instruction, negative, rating), signal, ctx });
     if (s.backend !== 'comfy') return null;
     const kontext = await findKontext(s.url).catch(() => null);
     if (!kontext) return null;

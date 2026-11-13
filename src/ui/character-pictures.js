@@ -1,6 +1,6 @@
 // One character-owned picture workspace, shared by both Pictures entry points.
 import { html, useState, useRef, useEffect, Button, Icon, TextArea, Select, Toggle, Section, Modal, pickFile, fileBytes, cx } from './kit.js';
-import { imageSettings, referenceImageReady, familyOf, paint, paintSprites, paintFromPicture, installSprites } from '../st/comfy.js';
+import { imageSettings, imageReady, referenceImageReady, familyOf, paint, paintSprites, paintFromPicture, installSprites } from '../st/comfy.js';
 import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, characterNegative, pictureInstruction, sizeFor } from '../core/comfy.js';
 import { useAiTask, AiStatus } from './ai.js';
 import { ImageSetup } from './image-setup.js';
@@ -90,7 +90,8 @@ export function CharacterPictures({ store, env, project, ch }) {
     }, `picture draft ${ch.id}`);
     let settings = null;
     let ready = false;
-    try { settings = imageSettings(); ready = referenceImageReady(); } catch { /* no ST context */ }
+    let editReady = false;
+    try { settings = imageSettings(); ready = imageReady(); editReady = referenceImageReady(); } catch { /* no ST context */ }
     const comfy = settings?.backend === 'comfy';
     const nano = settings?.backend === 'nanogpt';
     let sceneProblem = '';
@@ -155,8 +156,9 @@ export function CharacterPictures({ store, env, project, ch }) {
         // A character with a picture of their own gets new pictures made from it (FLUX Kontext), in its art style;
         // without Kontext on the server, pictures are painted from the words as before.
         const own = pr.reference !== false ? findArtifact(store.get(), 'media', current.avatarMediaId) : null;
+        if (nano && pr.reference !== false && current.avatarMediaId && !own) throw new Error('The selected reference portrait is missing. Upload or choose a valid portrait before reference editing.');
         const scene = /background|scene|location|landscape/i.test(pr.purpose ?? '');
-        const r = (own && await paintFromPicture({ reference: await mediaBytes(env, own), instruction: pictureInstruction(pr.purpose, pr.prompt), canvas: scene ? sizeFor('background') : null }))
+        const r = (own && await paintFromPicture({ reference: await mediaBytes(env, own), instruction: pictureInstruction(pr.purpose, pr.prompt), negative: characterNegative(pr), rating, canvas: scene ? sizeFor('background') : null }))
             ?? await paint({ prompt: characterPrompt({ appearance: current.appearance, prompt: pr.prompt, purpose: pr.purpose }), negative: characterNegative(pr), purpose: pr.purpose, rating });
         await saveCharacterPicture(env, store, project.id, ch.id, r.bytes, { purpose: pr.purpose, prompt: r.positive, seed: r.seed });
         setResult(`Picture saved. Choose it in “Choose avatar” above to use it on ${d.name}’s card.`);
@@ -302,7 +304,7 @@ export function CharacterPictures({ store, env, project, ch }) {
                 <${TextArea} label="Scene illustration guidance" value=${sceneGuidance} rows=${2} onChange=${setSceneGuidance} hint="Optional framing or style guidance. Leave empty to follow the conversation." />
             </details>
             <div class="cs-row">
-                <${Button} kind="primary" icon="image" label=${busy === 'scene' ? 'Illustrating current scene…' : 'Illustrate current scene'} onClick=${() => paintScene()} disabled=${!!busy || ai.busy || portraitLoading || !avatarPic || !nano || !ready || !!sceneProblem} />
+                <${Button} kind="primary" icon="image" label=${busy === 'scene' ? 'Illustrating current scene…' : 'Illustrate current scene'} onClick=${() => paintScene()} disabled=${!!busy || ai.busy || portraitLoading || !avatarPic || !nano || !editReady || !!sceneProblem} />
                 ${busy === 'scene' && html`<${Button} icon="stop" label="Cancel scene illustration" onClick=${() => sceneStop.current?.abort()} />`}
             </div>
             ${!nano ? html`<p class="cs-muted cs-small">Select NanoGPT in Image settings to enable this workflow.</p>` : !ready ? html`<p class="cs-warn-text cs-small">Configure your NanoGPT key and an image-editing model in Image settings.</p>` : sceneProblem ? html`<p class="cs-warn-text cs-small">${sceneProblem}</p>` : html`<p class="cs-muted cs-small">Uses up to ${settings.sceneMessages} recent visible messages. Clicking sends context to your creation LLM and makes one paid image request.</p>`}
@@ -339,7 +341,7 @@ export function CharacterPictures({ store, env, project, ch }) {
                     onChange=${v => store.update(p => editArtifactField(p, 'characters', ch.id, 'appearance', v, { summary: 'Edited appearance' }), 'appearance')} />
                 <${TextArea} label="Avoid in this picture" value=${draft.negative} rows=${2} stats=${false} onChange=${negative => setDraft({ negative })} />
                 ${avatarPic && html`<${Toggle} label="Use this character’s portrait as a reference when supported" checked=${draft.reference} onChange=${reference => setDraft({ reference })} />
-                    <p class="cs-muted cs-small">FLUX Kontext can use the portrait. Other setups use the written appearance and prompt.</p>`}
+                    <p class="cs-muted cs-small">NanoGPT reference editing and FLUX Kontext can use the portrait. Uncheck to deliberately generate a new picture from text; failed NanoGPT reference edits never fall back silently.</p>`}
             </${Section}>
         </section>
         ${setupOpen && html`<${Modal} title="Image generation settings" onClose=${() => setSetupOpen(false)}><${ImageSetup} env=${env} /><div class="cs-row"><${Button} kind="primary" label="Done — back to picture" onClick=${() => setSetupOpen(false)} /></div></${Modal}>`}

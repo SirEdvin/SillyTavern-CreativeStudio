@@ -88,10 +88,22 @@ export function nanoCanEdit(metadata) {
     return declarations.some(item => item?.capabilities?.image_to_image === true || item?.architecture?.input_modalities?.includes('image'));
 }
 
+/** Explicit text-generation/reference restrictions take precedence over generic generation flags. */
+export function nanoCanGenerate(metadata) {
+    const declarations = [metadata, ...(Array.isArray(metadata?.endpoints) ? metadata.endpoints : [])];
+    if (declarations.some(item => item?.capabilities?.text_to_image === false || item?.capabilities?.image_generation === false
+        || item?.supported_parameters?.min_input_images > 0 || item?.input_reference_constraints?.min_items > 0
+        || item?.supported_parameters?.input_image_constraints?.min_items > 0
+        || (Array.isArray(item?.architecture?.input_modalities) && !item.architecture.input_modalities.includes('text'))
+        || (Array.isArray(item?.architecture?.output_modalities) && !item.architecture.output_modalities.includes('image')))) return false;
+    return declarations.some(item => item?.capabilities?.text_to_image === true || item?.capabilities?.image_generation === true
+        || item?.architecture?.modality === 'text->image');
+}
+
 export async function nanoModels(options = {}) {
     const result = await nanoRequest('/api/v1/images/models', options);
     if (!Array.isArray(result.data)) throw new Error('NanoGPT returned no model catalog.');
-    return result.data.filter(m => typeof m?.id === 'string').map(m => ({ ...m, canEdit: nanoCanEdit(m) }));
+    return result.data.filter(m => typeof m?.id === 'string').map(m => ({ ...m, canEdit: nanoCanEdit(m), canGenerate: nanoCanGenerate(m) }));
 }
 
 export async function nanoModelMetadata(model, options = {}) {
@@ -201,19 +213,43 @@ async function outputBytes(data, { signal, fetcher }) {
     } finally { request.close(); }
 }
 
-export async function generateNanoImage({ settings, reference, instruction, signal, beforeSubmit, ctx = stContext(), fetcher = globalThis.fetch, prepare = prepareNanoReference }) {
+function validatePrompt(prompt, metadata) {
+    const declarations = [metadata, ...(Array.isArray(metadata?.endpoints) ? metadata.endpoints : [])];
+    for (const item of declarations) {
+        const supported = item?.supported_parameters, max = supported?.max_prompt_characters;
+        if (!Number.isFinite(max) || max < 0) continue;
+        const unit = supported.prompt_length?.unit;
+        const length = unit === 'unicode_code_points' ? Array.from(prompt).length
+            : unit === 'utf16_code_units' ? prompt.length : new TextEncoder().encode(prompt).length;
+        if (length > max) throw new Error(`This NanoGPT model allows at most ${max} prompt characters (${unit ?? 'conservative UTF-8 count'}). Shorten the prompt; no image request was sent.`);
+    }
+}
+
+/** A reference edit never falls back to text-only generation when the reference is missing/broken. */
+export async function generateNanoImage(options) {
+    if (!options.reference?.length) throw new Error('A reference portrait is required; text-only fallback is disabled.');
+    return generateNano({ ...options, edit: true });
+}
+/** Deliberate no-reference generation for first portraits and other new pictures. */
+export async function generateNanoTextImage(options) {
+    if (options.reference != null) throw new Error('Use reference editing when a reference portrait is supplied.');
+    return generateNano({ ...options, edit: false });
+}
+async function generateNano({ settings, reference, instruction, edit, signal, beforeSubmit, ctx = stContext(), fetcher = globalThis.fetch, prepare = prepareNanoReference }) {
     if (signal?.aborted) throw signal.reason ?? new Error('Cancelled');
     const prompt = String(instruction ?? '').trim();
-    if (!prompt || prompt.length > 12000) throw new Error('A bounded image editing instruction is required.');
-    if (!reference?.length) throw new Error('A reference portrait is required; text-only fallback is disabled.');
+    if (!prompt || prompt.length > 12000) throw new Error('A bounded image generation instruction is required.');
     const key = await credential(settings, ctx, fetcher, signal);
     const metadata = await nanoModelMetadata(settings.nanoModel, { signal, fetcher });
-    if (!nanoCanEdit(metadata)) throw new Error('This NanoGPT model does not advertise reference-image editing. Choose an image-input model.');
+    if (edit ? !nanoCanEdit(metadata) : !nanoCanGenerate(metadata)) throw new Error(edit
+        ? 'This NanoGPT model does not advertise reference-image editing. Choose an image-input model.'
+        : 'This NanoGPT model does not advertise text-to-image generation. Choose a generation-capable model for the first portrait.');
+    validatePrompt(prompt, metadata);
     const resolution = nanoResolution(settings.nanoResolution, metadata);
-    const prepared = await prepare(reference);
-    validateReference(prepared, metadata);
+    let prepared;
+    if (edit) { prepared = await prepare(reference); validateReference(prepared, metadata); }
     if (signal?.aborted) throw signal.reason ?? new Error('Cancelled');
-    const body = { model: settings.nanoModel, prompt, n: 1, input_references: [prepared.dataUrl], ...(resolution ? { resolution } : {}) };
+    const body = { model: settings.nanoModel, prompt, n: 1, ...(prepared ? { input_references: [prepared.dataUrl] } : {}), ...(resolution ? { resolution } : {}) };
     if (new TextEncoder().encode(JSON.stringify(body)).length > 12 * 1024 * 1024) throw new Error('The prepared portrait is too large for this image request.');
     await beforeSubmit?.(); // Recheck ownership (including async persisted-chat checks) immediately before spending credits.
     const data = await nanoRequest('/api/v1/images', { body, key, signal, fetcher });

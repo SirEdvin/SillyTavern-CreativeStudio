@@ -271,9 +271,9 @@ export async function runPipeline({ getProject, update, runTask, run, onRun = ()
             try {
                 res = await runTask(step.task, args);
             } catch (e) {
-                // One automatic retry for a stuck or failed call, so a hands-free run survives a provider hiccup.
+                // Retry text calls only. Images (or a failed image save) may already be billed; require an explicit retry.
                 // Not after a timeout on the main connection: SillyTavern cannot abort that request, so a retry would queue behind it.
-                if (signal?.aborted || (e?.timeout && e?.meta?.mode === 'main')) throw e;
+                if (step.task === 'image.portrait' || signal?.aborted || (e?.timeout && e?.meta?.mode === 'main')) throw e;
                 r.steps[step.id] = { status: 'running', startedAt: r.steps[step.id].startedAt, retrying: e?.message ?? String(e) };
                 save();
                 res = await runTask(step.task, args);

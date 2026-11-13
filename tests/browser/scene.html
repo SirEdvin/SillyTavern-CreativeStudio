@@ -31,7 +31,8 @@ function image(label, background) {
 const originalUrl = image('TEST REFERENCE', '#665580');
 const outputUrl = image('TEST SCENE OUTPUT', '#254d62');
 const original = writeCardChunks(base64ToBytes(originalUrl.split(',')[1]), { chara: JSON.stringify({ secret_card_metadata: 'must-not-leave-the-browser' }) });
-const model = { id: 'bytedance/seedream-v5.5', name: 'Fixture editor', architecture: { input_modalities: ['text', 'image'] }, supported_parameters: { resolutions: ['1k','2k'], max_input_images: 1 } };
+const model = { id: 'bytedance/seedream-v5.5', name: 'Fixture editor', capabilities: {image_generation:true,image_to_image:true}, architecture: { input_modalities: ['text', 'image'] }, supported_parameters: { resolutions: ['1k','2k'], max_input_images: 1 } };
+const textModel = { id:'fixture-text-only', name:'Fixture text generator', capabilities:{image_generation:true,image_to_image:false}, architecture:{modality:'text->image',input_modalities:['text'],output_modalities:['image']},supported_parameters:{resolutions:['auto','768x1024']} };
 const metadata = { ...model, endpoints: [{ supported_parameters: model.supported_parameters, input_reference_constraints: { max_items:1, route: { min_width:8,min_height:8,max_bytes:10000000,formats:['png'] } } }] };
 const ctx = {
     characterId:0, characters:[{ avatar:'mara.png',name:'Mara' }], getCurrentChatId:()=> 'fixture-chat',
@@ -63,8 +64,8 @@ window.fetch=async(url,options={})=>{
     if(stFiles.has(String(url)))return new Response(stFiles.get(String(url)),{headers:{'Content-Type':String(url).endsWith('.json')?'application/json':'image/png'}});
     if(String(url).startsWith('/user/files/'))return new Response('',{status:404});
     if(String(url).startsWith('https://api.nano-gpt.com')){
-        if(String(url).endsWith('/models'))return Response.json({data:[model]});
-        if(String(url).endsWith('/endpoints'))return Response.json(metadata);
+        if(String(url).endsWith('/models'))return Response.json({data:[model,textModel]});
+        if(String(url).endsWith('/endpoints'))return Response.json(String(url).includes('/fixture-text-only/')?textModel:metadata);
         if(String(url).endsWith('/images')){
             calls.push({type:'image',body:JSON.parse(options.body),headers:options.headers});
             if(mode==='provider-error')return new Response('failure',{status:502});
@@ -87,7 +88,7 @@ const env={toast(...args){calls.push({type:'toast',args})},confirm:async()=>true
     loadMediaBytes:async(url)=>url===originalUrl?original:new Uint8Array(await(await realFetch(url)).arrayBuffer()),
     saveMedia:async(_project,id,_ext,bytes)=>{const path='/__test_media/'+id+'.png';await realFetch(path,{method:'POST',body:bytes});return path;}
 }};
-function Host(){const[p,setP]=useState(store.get());useEffect(()=>store.subscribe(setP),[]);return html`<${CharacterPictures} store=${store} env=${env} project=${p} ch=${p.characters[0]} />`;}
+function Host(){const[p,setP]=useState(store.get());useEffect(()=>{setP(store.get());const unsubscribe=store.subscribe(setP);window.sceneHarnessReady=true;return()=>{window.sceneHarnessReady=false;unsubscribe()}},[]);return html`<${CharacterPictures} store=${store} env=${env} project=${p} ch=${p.characters[0]} />`;}
 render(html`<${Host}/>`,document.querySelector('#root'));
 const waitFor=async(check)=>{for(let i=0;i<200;i++){if(check())return;await new Promise(r=>setTimeout(r,25));}throw new Error('Timed out waiting for browser UI');};
 const button=label=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===label);
@@ -125,6 +126,7 @@ window.sceneHarness={store,ctx,calls,event};document.querySelector('#test-report
 document.querySelector('#options_button').addEventListener('click',()=>{const menu=document.querySelector('#options');menu.style.display=menu.style.display==='none'?'block':'none';});
 let continues=0;document.querySelector('#option_continue').addEventListener('click',()=>continues++);
 window.toastr={error(message){calls.push({type:'shortcut-error',message})},success(message){calls.push({type:'shortcut-success',message})},info(message){calls.push({type:'shortcut-info',message})}};
-window.sceneHarness={store,ctx,calls,event,stFiles,realFetch,original,project,character,setMode:value=>{mode=value},setSavedChat:value=>{savedChat=structuredClone(value)},getSavedChat:()=>savedChat};
+window.sceneHarness={store,ctx,calls,event,env,stFiles,realFetch,original,project,character,setMode:value=>{mode=value},setSavedChat:value=>{savedChat=structuredClone(value)},getSavedChat:()=>savedChat};
 await import('/tests/browser/chat-menu-tests.js');
+await import('/tests/browser/portrait-tests.js');
 </script></body></html>
