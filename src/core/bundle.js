@@ -28,14 +28,15 @@ export function buildBundle(project, opts = {}) {
     // Each card names its lorebook by the file name it has in this bundle, so ST links them on import.
     const worldOf = lb => safe(lb.name);
     const cards = new Map(project.characters.map(c => [c.id, cardForSt(project, c, worldOf)]));
+    const usedNames=new Set();
     for (const c of project.characters) {
-        const name = safe(c.card.data.name);
+        const base=safe(c.card.data.name);let name=base,suffix=2;while(usedNames.has(name.toLowerCase()))name=`${base}-${suffix++}`;usedNames.add(name.toLowerCase());
         const r = exportCard(cardFormat, { card: cards.get(c.id), topLevelExtras: c.topLevelExtras, image: opts.images?.[c.id] ?? null });
         put(`characters/${name}.png`, r.bytes);
         notes.push(...r.notes.map(n => `${name}: ${n}`));
         entries.push({ type: 'character', name: c.card.data.name, path: `characters/${name}.png`, format: cardFormat, embeddedLorebook: !!c.card.data.character_book?.entries?.length, scopedRegex: c.card.data.extensions?.regex_scripts?.length ?? 0 });
         if (opts.includeCharx) {
-            const x = exportCard('charx', { card: cards.get(c.id), topLevelExtras: c.topLevelExtras, image: opts.images?.[c.id] ?? null, assetFiles: opts.assetFiles?.[c.id] ?? {} });
+            const x = exportCard('charx', { card: cards.get(c.id), topLevelExtras: c.topLevelExtras, image: opts.images?.[c.id] ?? null, assetFiles: opts.assetFiles?.[c.id] ?? {}, ...opts.openings?.[c.id] });
             put(`characters/${name}.charx`, x.bytes);
             entries.push({ type: 'character-charx', name: c.card.data.name, path: `characters/${name}.charx` });
         }
@@ -128,7 +129,7 @@ function readme(project, manifest, deps) {
             L.push(`- \`${e.path}\` — “${e.name}”: Characters → Import (PNG).${e.embeddedLorebook ? ' It has an embedded lorebook; accept ST’s prompt to import it.' : ''}${e.scopedRegex ? ` It carries ${e.scopedRegex} character-scoped regex script(s); allow them when ST asks.` : ''}`);
         }
         const charx = by('character-charx');
-        if (charx.length) L.push(`- CHARX copies (${charx.map(e => `\`${e.path}\``).join(', ')}) carry embedded assets; ST imports CHARX (icon → avatar, emotions → sprites, backgrounds) but cannot export it.`);
+        if (charx.length) L.push(`- CHARX copies (${charx.map(e => `\`${e.path}\``).join(', ')}) carry embedded assets and opening illustrations; import these for portable illustrated greetings. PNG copies only contain local opening image links. ST imports CHARX but cannot export it.`);
         L.push('');
     }
     if (by('regex').length) {

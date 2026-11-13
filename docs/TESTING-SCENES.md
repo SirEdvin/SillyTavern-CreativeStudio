@@ -77,6 +77,24 @@ These exercise the actual Pictures button and actual `runPipeline`/`makeRunTask`
 
 Unit coverage includes `tests/nanogpt-paint.test.js`, configuration readiness/automatic art steps, separate explicit text/edit provider entrypoints, reference preservation, cancellation/ownership guards, no retries, and model-specific prompt limits in UTF-16/code-point units.
 
+## Persistent opening illustrations
+
+After a fresh harness navigation, in a foreground tab:
+
+```js
+await window.runOpeningEditorTests()
+await window.runOpeningPortabilityTests()
+await window.runOpeningCorruptionTests()
+```
+
+The actual Openings/Publish Preact components generate without an active chat, target first/alternate text independently, preserve the avatar, preview the image and exercise stale status, replacement/removal, undo and cancellation. Duplicate-text row edits/moves/removals are tested through the real controls. Export downloads a real CHARX containing the PNG files; an isolated Studio project reimports it with new local image identities. Actual review/apply and create-card clients are exercised against explicitly labeled native ST persistence fixtures. Encoded native-destination image URLs are loaded by the browser after an **extraction fixture** materializes them. Publishing/importing/creating must make no image requests.
+
+The native persistence fixture mirrors ST’s actual recursive deep merge and unset-sentinel processing, including partial illustration removal and retaining the captured live backup when a post-write readback request throws. Real Chromium raster tests reject a valid-CRC PNG with an invalid IDAT stream through CHARX import, local PNG fallback and native apply preflight; Node tests explicitly stub the raster decoder. Greeting trailing newlines and repeated render/normalize idempotence are separate unit regressions.
+
+These are not an end-to-end deployment of the native ST server or renderer. Native extraction compatibility is additionally checked against ST 1.19 source behavior. Unit tests cover content-addressed paths/SHA-256, CRC/PNG/dimension limits, bounded ZIP expansion, duplicate bundle names, same-origin streamed image reads, missing/corrupt assets, metadata normalization, row identity, media deletion, ownership races and native readback/backup failures. Run `node --test tests/opening-*.test.js` plus the complete suite.
+
+Optional uncharged manual deployment acceptance: import the exported CHARX using **native ST character import**, start a new chat and swipe each illustrated greeting; confirm that pictures load, including two cards with the same name and a renamed card. Re-export/reimport through Studio without calling either model. No existing historical chat copies should change. Live visual-quality evaluation remains a separate paid action requiring authorization.
+
 ## Public API smoke check (no key, no generation charges)
 
 The real adapter's `nanoModels()` and `nanoModelMetadata(id)` functions can be called against NanoGPT to confirm public discovery, model-specific reference support and supported resolutions. Catalog aliases and endpoint availability can differ; manual IDs are supported but validated through endpoint metadata before generation.

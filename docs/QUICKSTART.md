@@ -15,6 +15,14 @@ AI generation uses the connection selected in **AI setup** and your provider’s
 
 Select NanoGPT in Image settings, save your key, and choose a generation-capable image model. No portrait upload is needed for a new character. Write a picture prompt and press **Generate picture**; the first portrait is saved and selected as the avatar. Subsequent pictures can use it as their reference, or you can explicitly uncheck the reference option to generate a fresh picture from text. The regular creation pipeline can also run its selected **Portrait** step through NanoGPT. Image/provider/save failures are not automatically retried. Model-specific prompt limits are checked before image submission; shorten an overlong prompt rather than losing its identity/style constraints to silent truncation.
 
+## Save illustrated openings in the character card (1.4.0 fork)
+
+Open a character → **Openings**. With a selected portrait, NanoGPT editing model and creation text connection configured, press **Generate illustration** beside the first message or an alternate greeting. No chat needs to be open. The character stays visible; the user stays off-screen. Use **Replace illustration** to regenerate deliberately or **Remove illustration** to unlink it. Text/portrait edits show an outdated warning without spending credits.
+
+Use **Export & use → Review & apply to SillyTavern…**, or **Create as new SillyTavern character**, to put the saved pictures into the native card's future openings. Existing chat history is not changed. Moving/removing alternate rows preserves the correct image association, even for identical text; undo works normally.
+
+For sharing or another installation, **Download CHARX**: it bundles and relinks the pictures. PNG/JSON only retain local links and cannot carry the extra files. Applying, exporting and importing reuse saved images without generating again. Missing images must be replaced/removed or restored from the original CHARX.
+
 ## Illustrate the current chat with NanoGPT (1.3.5 fork)
 
 After importing the active character through **From SillyTavern**, keep that character's chat open and go to **Pictures → Image settings → NanoGPT**. Enter your key and press **Save key**, choose an image-editing model (for example `bytedance/seedream-v5.5` or `hidream-o1-image`), and leave output resolution on **Auto** to use a supported size. Your existing creation text connection is used for scene analysis; it can also be NanoGPT.

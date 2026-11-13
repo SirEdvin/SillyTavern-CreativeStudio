@@ -7,6 +7,8 @@ import { detectImportKind, isStudioProjectFile } from '../core/bundle.js';
 import { newCharacter, upsertArtifact, removeArtifact, findArtifact, isUntouchedBlank, migrateProject, logHistory } from '../core/project.js';
 import { uid, utf8Decode } from '../core/bytes.js';
 import { unzipSync, strFromU8 } from '../../vendor/fflate.mjs';
+import {openingEntries} from '../core/opening-illustrations.js';
+import {hydrateOpeningMedia} from './opening-assets.js';
 
 /** What the card picker offers. */
 export const CARD_FILES = '.png,.json,.charx';
@@ -36,6 +38,8 @@ export function openCardImport(detail = {}) {
  * @returns {Promise<object|null>} the new character, or null (a toast says why)
  */
 export async function importCard(store, env, bytes, fileName, { replaceId } = {}) {
+    const projectId=store.get().id;
+    const guard=()=>{if(store.get().id!==projectId)throw new Error('The project changed while importing this card.')};
     let imported;
     try {
         imported = importCardFile(bytes, fileName);
@@ -56,12 +60,17 @@ export async function importCard(store, env, bytes, fileName, { replaceId } = {}
             art.links.media = [pic.media.id];
         }
         const extraFiles = Object.entries(imported.assetFiles ?? {});
+        const openingPaths=new Set(Object.values(openingEntries(art.card)).map(e=>e.assetPath).filter(Boolean));
         if (extraFiles.length) art.assetFiles = {};
         for (const [path, data] of extraFiles) {
+            guard();if(openingPaths.has(path))continue;
             const file = await saveMedia(env, store.get(), data, { name: path, role: 'charx-asset', mime: 'application/octet-stream' });
             adds.push(file.apply);
             art.assetFiles[path] = file.media.id;
         }
+        const restored=await hydrateOpeningMedia(art,imported,env,store.get(),{guard});
+        adds.push(...restored.saves.map(saved=>saved.apply));
+        art.origin.diagnostics.push(...restored.notes);guard();
     } catch (e) {
         env.toast(`Couldn't save the pictures in ${fileName}: ${e.message}`, 'error', 8000);
         return null;

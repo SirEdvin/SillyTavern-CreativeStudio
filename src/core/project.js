@@ -5,6 +5,7 @@
 import { clone, uid, stableStringify, hashString } from './bytes.js';
 import { emptyCardV3 } from './card.js';
 import { embeddedPath } from './charx.js';
+import { openingEntries, normalizeOpeningCard, reconcileOpeningCards, decorateOpeningCard, clearOpeningMedia } from './opening-illustrations.js';
 import { getPath, setPath, jsonDiff } from './diff.js';
 
 export const PROJECT_SCHEMA = 'st-creative-studio/project';
@@ -89,6 +90,7 @@ export function upsertArtifact(project, type, artifact, historyEntry) {
     if (!COLLECTIONS[type]) throw new Error(`Unknown artifact type ${type}`);
     const list = project[type];
     const idx = list.findIndex(a => a.id === artifact.id);
+    if(type==='characters'&&artifact.card)artifact={...artifact,card:normalizeOpeningCard(idx>=0?reconcileOpeningCards(list[idx].card,artifact.card):artifact.card)};
     const next = idx >= 0 ? list.map(a => (a.id === artifact.id ? artifact : a)) : [...list, artifact];
     let p = { ...project, [type]: next, modified: now() };
     if (historyEntry) p = logHistory(p, { target: { type, id: artifact.id }, ...historyEntry });
@@ -121,7 +123,7 @@ export function setSprite(project, characterId, label, mediaId, meta = {}) {
 
 /** The pictures a character shows: its avatar, gallery, sprite slots and CHARX asset files. */
 function mediaIdsUsedBy(c) {
-    return [c.avatarMediaId, ...(c.links?.media ?? []), ...Object.values(c.sprites ?? {}), ...Object.values(c.assetFiles ?? {})].filter(Boolean);
+    return [c.avatarMediaId, ...(c.links?.media ?? []), ...Object.values(c.sprites ?? {}), ...Object.values(c.assetFiles ?? {}), ...Object.values(openingEntries(c.card)).map(e=>e.mediaId)].filter(Boolean);
 }
 
 /**
@@ -136,6 +138,7 @@ export function mediaUsage(project, mediaId) {
         else if ((c.links?.media ?? []).includes(mediaId)) out.push({ ...who, how: 'gallery' });
         for (const [label, id] of Object.entries(c.sprites ?? {})) if (id === mediaId) out.push({ ...who, how: 'sprite', label });
         for (const [path, id] of Object.entries(c.assetFiles ?? {})) if (id === mediaId) out.push({ ...who, how: 'asset', path });
+        for (const [key, entry] of Object.entries(openingEntries(c.card))) if(entry.mediaId===mediaId)out.push({...who,how:'opening',label:key});
     }
     return out;
 }
@@ -151,7 +154,7 @@ export function unusedMedia(project) {
  * the card's own asset entries for those files (a stale icon entry would keep a CHARX export from using the avatar).
  */
 function withoutMedia(c, gone) {
-    let next = c;
+    let next = {...c,card:clearOpeningMedia(c.card,gone)};
     if (gone.has(c.avatarMediaId)) next = { ...next, avatarMediaId: '', portraitAutoLoadBlocked: true };
     const gallery = c.links?.media;
     if (gallery?.some(id => gone.has(id))) next = { ...next, links: { ...next.links, media: gallery.filter(id => !gone.has(id)) } };
@@ -402,11 +405,18 @@ export function stWorldName(lb) {
  * so the first lorebook linked in the project becomes that link, unless the card already names one.
  */
 export function cardForSt(project, ch, nameOf = stWorldName) {
-    if (ch?.card?.data?.extensions?.world) return ch.card;
+    const decorated=decorateOpeningCard(ch.card,entry=>{
+        if(entry.missing)throw new Error('Opening illustration is missing. Import its CHARX file, replace it or remove it before applying the card.');
+        const media=entry.mediaId?findArtifact(project,'media',entry.mediaId):null;
+        if(entry.mediaId&&!media)throw new Error('Opening illustration media is missing. Restore or remove the illustration before applying the card.');
+        return media?.url??entry.url;
+    });
+    for(const [key,entry] of Object.entries(openingEntries(decorated)))decorated.data.extensions.creative_studio.openingIllustrations.entries[key]={...entry,staleReference:!!entry.staleReference||!!entry.referenceMediaId&&entry.referenceMediaId!==ch.avatarMediaId};
+    if (decorated?.data?.extensions?.world) return decorated;
     const lb = (ch?.links?.lorebooks ?? []).map(id => findArtifact(project, 'lorebooks', id)).find(Boolean);
     const name = lb ? nameOf(lb) : '';
-    if (!name) return ch.card;
-    const card = clone(ch.card);
+    if (!name) return decorated;
+    const card = clone(decorated);
     card.data.extensions = { ...(card.data.extensions ?? {}), world: name };
     return card;
 }

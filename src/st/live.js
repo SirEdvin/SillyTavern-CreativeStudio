@@ -7,6 +7,8 @@ import { clone, stableStringify, uid } from '../core/bytes.js';
 import { toSillyTavernShape, V3_ONLY_FIELDS } from '../core/card.js';
 import { jsonDiff } from '../core/diff.js';
 import { spriteFolderFor } from '../core/sprites.js';
+import {openingStorageError} from '../core/opening-illustrations.js';
+import {verifyOpeningImages} from '../ui/opening-assets.js';
 
 const UNSET = '__@@UNSET@@__';
 
@@ -70,6 +72,7 @@ export function fidelityReport(sentCard, stored) {
  */
 export async function applyCardToSt(avatar, card, topLevelExtras = {}) {
     const ctx = stContext();
+    await verifyOpeningImages(card);
     const before = await getStCharacter(avatar);
     const shaped = toSillyTavernShape(card, topLevelExtras);
     const payload = { avatar, ...pickV1(shaped), tags: shaped.data.tags ?? [], data: clone(shaped.data) };
@@ -84,16 +87,31 @@ export async function applyCardToSt(avatar, card, topLevelExtras = {}) {
             payload.data.extensions[k] = UNSET;
         }
     }
+    unsetManagedFields(beforeExt.creative_studio,payload.data.extensions?.creative_studio);
     delete payload.data.name; // renames go through /rename; keep avatar key stable
     delete payload.name;
-    await stPost('/api/characters/merge-attributes', payload);
-    await ctx.getOneCharacter?.(avatar);
-    const idx = (ctx.characters ?? []).findIndex(c => c.avatar === avatar);
-    if (idx >= 0) await ctx.eventSource?.emit?.(ctx.eventTypes.CHARACTER_EDITED, { detail: { id: String(idx), character: ctx.characters[idx] } });
-    const after = await getStCharacter(avatar);
-    return { backup: { kind: 'character', avatar, data: before, time: new Date().toISOString(), id: uid('bk') }, fidelity: fidelityReport(card, after), renamed: card.data.name !== before?.data?.name };
+    const backup={kind:'character',avatar,data:before,time:new Date().toISOString(),id:uid('bk')},renamed=card.data.name!==before?.data?.name;
+    try{
+        await stPost('/api/characters/merge-attributes', payload);
+        await ctx.getOneCharacter?.(avatar);
+        const idx = (ctx.characters ?? []).findIndex(c => c.avatar === avatar);
+        if (idx >= 0) await ctx.eventSource?.emit?.(ctx.eventTypes.CHARACTER_EDITED, { detail: { id: String(idx), character: ctx.characters[idx] } });
+        const after = await getStCharacter(avatar);
+        return {backup,fidelity:fidelityReport(card,after),renamed,openingError:openingStorageError(card,after,before)};
+    }catch{
+        return {backup,fidelity:[],renamed,error:'The SillyTavern write was attempted but could not be verified. The previous card backup was retained; inspect the stored character before retrying.'};
+    }
 }
 
+// Native merge-attributes recursively merges objects, so omission does not delete nested metadata.
+function unsetManagedFields(before,next){
+    const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
+    if(!object(before)||!object(next))return;
+    for(const key of Object.keys(before)){
+        if(!Object.hasOwn(next,key))Object.defineProperty(next,key,{value:UNSET,enumerable:true,writable:true,configurable:true});
+        else unsetManagedFields(before[key],next[key]);
+    }
+}
 function pickV1(shaped) {
     const out = {};
     for (const k of ['description', 'personality', 'scenario', 'first_mes', 'mes_example']) out[k] = shaped[k] ?? '';

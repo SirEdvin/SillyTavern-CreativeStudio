@@ -3,6 +3,8 @@ import { readCardChunks, writeCardChunks, isPng, blankPng } from './png.js';
 import { normalizeToV3, toSpecV2, toSpecV3, toSillyTavernShape, validateCardV3 } from './card.js';
 import { readCharx, writeCharx, embeddedPath, suggestedAssetPath } from './charx.js';
 import { utf8Decode, utf8Encode } from './bytes.js';
+import {openingEntries,decorateOpeningCard} from './opening-illustrations.js';
+import {withOpeningAssets,isOpeningAssetPath} from './opening-assets.js';
 
 /**
  * Parse any supported card file.
@@ -52,8 +54,20 @@ export function importCardFile(bytes, fileName = '') {
  * @param {{ card: any, topLevelExtras?: any, image?: Uint8Array|null, assetFiles?: Record<string, Uint8Array> }} src
  * @returns {{ bytes: Uint8Array, ext: string, mime: string, notes: string[] }}
  */
-export function exportCard(kind, { card, topLevelExtras = {}, image = null, assetFiles = {} }) {
+export function exportCard(kind, { card, topLevelExtras = {}, image = null, assetFiles = {}, openingImages = {}, openingFolder, openingReferenceMediaId }) {
     const notes = [];
+    const originalFiles=assetFiles;
+    if(card.data?.assets){const active=new Set(Object.values(openingEntries(card)).map(e=>`embeded://${e.assetPath}`));card=structuredClone(card);card.data.assets=card.data.assets.filter(a=>!isOpeningAssetPath(embeddedPath(a.uri))||active.has(a.uri))}
+    if(kind==='charx')assetFiles=Object.fromEntries(Object.entries(assetFiles).filter(([path])=>!isOpeningAssetPath(path)));
+    if(Object.keys(openingEntries(card)).length){
+        if(kind==='charx'){
+            const prepared=withOpeningAssets(card,openingImages,openingFolder,{referenceMediaId:openingReferenceMediaId,existingFiles:originalFiles});
+            card=prepared.card;assetFiles={...assetFiles,...prepared.files};
+        }else{
+            card=decorateOpeningCard(card);
+            notes.push('Opening illustrations use local image links in PNG/JSON; image files are not bundled. Use CHARX for portable illustrated openings.');
+        }
+    }
     const errors = validateCardV3(card).filter(i => i.level === 'error');
     if (errors.length) notes.push(`${errors.length} specification error(s) remain (see Compatibility).`);
     switch (kind) {

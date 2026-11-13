@@ -12,7 +12,9 @@ and the chosen portrait carried into card exports. Expression previews no longer
 set editable word minimums per field, and generate dialogue with varied speech, action and narration.
 **[Start here: the short guide](docs/QUICKSTART.md).** Advanced tools remain available when you need them.
 
-**This fork adds one-click NanoGPT scene illustration (1.3.5).** In the chat **More menu** (beside Regenerate/Continue), choose **Illustrate current scene**. It reuses or creates the character's project **in the background**, generates from the portrait and current scene, and attaches the image to the **latest visible character message**—without opening Studio or creating a new chat message. The action is disabled if that reply already contains an image. The separate Pictures button still generates gallery-only previews. [Setup and limitations](#nanogpt-scene-illustration).
+**New in 1.4.0: reusable opening illustrations.** Open a character → **Openings** to generate, replace or remove an image for the first message or any alternate greeting, without a live chat. Apply the card to show it in future openings; export **CHARX** to bundle the image files. [How it works and portability limits](#persistent-opening-illustrations).
+
+**This fork also adds one-click NanoGPT scene illustration.** In the chat **More menu** (beside Regenerate/Continue), choose **Illustrate current scene**. It reuses or creates the character's project **in the background**, generates from the portrait and current scene, and attaches the image to the **latest visible character message**—without opening Studio or creating a new chat message. The action is disabled if that reply already contains an image. The separate Pictures button still generates gallery-only previews. [Setup and limitations](#nanogpt-scene-illustration).
 
 Based on [rustyorb's Creative Studio](https://github.com/rustyorb/SillyTavern-CreativeStudio), under the same AGPL-3.0 license. Install this fork **instead of**, not alongside, another Creative Studio copy.
 
@@ -277,6 +279,20 @@ A taste of the first message:
 > (…) *"So. Are you going to help me keep the light burning, Inspector, or are you just going to watch?"*
 
 <div align="center"><img src="docs/assets/divider.svg" width="520" alt="" /></div>
+
+## Persistent opening illustrations
+
+In **Characters → Openings**, the first message and each alternate greeting have **Generate illustration**, **Replace illustration** and **Remove illustration** controls. Configure NanoGPT image editing and the normal creation text connection first; choose/upload the character's original portrait in **Pictures**. No active chat or user reply is needed. The selected opening and card details supply the scene; the selected original portrait anchors identity/style. First-person user POV keeps the character visible and the user completely off-screen.
+
+Generation saves a reusable picture with that opening without changing the avatar. Editing text or choosing another portrait marks it potentially outdated; nothing regenerates automatically. Images follow explicit alternate row moves/removals, including duplicate greeting text. Remove clears only the managed illustration, not the opening or hand-written image markup. Undo restores the association. Images remain in the project picture library until explicitly deleted.
+
+Use **Export & use → Review & apply to SillyTavern…** (or **Create as new SillyTavern character**) to write native inline Markdown into the saved first/alternate greetings. Project-wide apply/create and exports use the same associations. Saved pictures are reused without another image request. Existing historical chat messages are not rewritten: start a new chat/select the updated card opening to see it. Opening images in Markdown can contribute local URL text to prompts; binary image data is never inserted into greeting text.
+
+**Portable sharing: choose CHARX.** It includes validated, content-addressed PNG assets and native ST 1.19-compatible destination links. Importing into Studio restores clean editing text and fresh local image IDs/URLs. The default ST CHARX importer can extract those images without this extension rendering the greetings. Destination folders follow the card's sanitized display name (not its avatar filename); different images for duplicate names have distinct hash filenames. After import, ordinary native renames keep the already materialized links; if another tool rewrites/strips assets or Markdown, portability cannot be guaranteed.
+
+**PNG and JSON do not bundle extra image files.** They retain local links and show a warning: those links need the original files on the same installation. Use CHARX to move an illustrated card to another installation. Missing/corrupt images fail apply/export rather than silently discarding them. Apply reads back the exact native greeting fields; a verification failure is reported with the live backup retained. Imported assets and owned local images have URL/size/PNG validation; CHARX expansion is bounded.
+
+One explicit generation click submits at most one image request; there are no automatic paid retries. Cancellation cannot guarantee a refund for a request already submitted. Test fixtures verify payloads, persistence and portability logic, not live model visual quality. Group-only greetings are not illustrated by these controls.
 
 ## NanoGPT scene illustration
 
