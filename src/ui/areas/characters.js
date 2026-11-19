@@ -23,6 +23,7 @@ import { clone, uid } from '../../core/bytes.js';
 import { importIntoSt, applyCardToSt, getStCharacter } from '../../st/live.js';
 import { jsonDiff } from '../../core/diff.js';
 import { saveMedia, mediaBytes, toPngBytes } from '../media.js';
+import { prepareNanoReference } from '../../st/nanogpt.js';
 import { selectCharacterAvatar } from '../../core/pictures.js';
 import { recordBackup } from '../inspector.js';
 import { openCardImport } from '../importer.js';
@@ -50,21 +51,44 @@ export function CharactersArea(props) {
 
 function CharacterHome({ store, env, project, select }) {
     const [query, setQuery] = useState('');
+    const ai = useAiTask(store);
     const add = (art, summary) => {
         store.update(p => upsertArtifact(p, 'characters', art, { action: 'create', actor: art.origin?.kind === 'import' ? 'import' : 'user', summary }), 'create character');
         select('characters', art.id);
+    };
+    const fromPicture = async () => {
+        const f = await pickFile('image/*');
+        if (!f) return;
+        const projectId = project.id;
+        const bytes = await fileBytes(f);
+        let picture;
+        try { picture = await prepareNanoReference(bytes, 1024); } catch (e) { env.toast(e.message, 'error'); return; }
+        const r = await ai.run('character.from-image', { images: [picture.dataUrl] });
+        if (!r || store.get().id !== projectId) return;
+        const { name, description } = r.value;
+        try {
+            const { media, apply } = await saveMedia(env, store.get(), bytes, { name: `${name} avatar`, role: 'avatar' });
+            if (store.get().id !== projectId) return;
+            const card = emptyCardV3(name);
+            card.data.description = description;
+            const art = newCharacter(name, card);
+            store.update(p => selectCharacterAvatar(upsertArtifact(apply(p), 'characters', art, { action: 'create', actor: 'ai', summary: `${name} from a picture` }), projectId, art.id, media.id), 'create character from picture', { merge: false });
+            select('characters', art.id);
+        } catch (e) { env.toast(`Could not save the picture: ${e.message}`, 'error'); }
     };
     const chars = project.characters;
     return html`<div class="cs-area-head">
             <h3><${Icon} name="user-pen" /> Characters & scenarios</h3>
             <div class="cs-spacer"></div>
             <${Button} icon="user-plus" label="New character" onClick=${() => add(newCharacter('New character'), 'New character')} />
+            <${Button} kind="ai" icon="image" label="From picture…" title="Pick a portrait: AI writes the name and description from it, and the picture becomes the avatar and appearance reference" onClick=${fromPicture} disabled=${ai.busy} />
             <${RemixLauncher} key=${project.id} store=${store} env=${env} project=${project} select=${select} />
             <${Button} icon="masks-theater" label="New scenario" title="Scenario / narrator card" onClick=${() => add(newCharacter('New scenario', null, { kind: 'scenario' }), 'New scenario')} />
             <${Button} icon="file-import" label="Import card…" title="A character card: PNG, CHARX or JSON. You can also drop a card anywhere on the studio." onClick=${() => openCardImport()} />
             <${Button} icon="user-plus" label="From SillyTavern…" title="Bring in one of your SillyTavern characters with its lorebook and sprites" onClick=${openPullPicker} />
         </div>
         <div class="cs-area-body">
+            <${AiStatus} ai=${ai} />
             <p class="cs-page-intro">Choose a character to keep writing. Start with the basics; add world details, pictures and extra tools when you need them.</p>
             ${chars.length > 0 && html`<input class="text_pole cs-library-search" aria-label="Find a character" placeholder="Find a character…" value=${query} onInput=${e => setQuery(e.currentTarget.value)} />`}
             <${CharacterLibrary} project=${project} characters=${chars.filter(c => c.card.data.name.toLowerCase().includes(query.toLowerCase()))} select=${select} />

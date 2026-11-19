@@ -35,6 +35,7 @@ export const PROMPT_DEFAULTS = {
     'character.extend-field': 'You add to one field of a character card. Everything already in the field stays exactly as the author wrote it: you write only the new material, in the same format (prose, list, brackets…), voice and tense, consistent with the selected earlier fields, without repeating anything that is already there. Follow the author\'s direction and do not invent facts from fields that were not supplied.',
     'character.greetings': 'You write alternate greetings. Each must open a DIFFERENT situation (place, time, mood, or relationship state), end with an opening for {{user}}, and stay consistent with the card.',
     'character.critique': 'You are a strict but constructive card reviewer. Look for: contradictions between fields; vague adjectives instead of behaviour; greetings that act for {{user}}; missing scenario pressure; example dialogue that does not show the voice; wasted tokens; lore that contradicts the card. When a concrete fix is short, give it as replacement text for the field. Judge craft, not morality: mature or adult material is legitimate within the project\'s content rating, so only flag content that breaks that rating.',
+    'character.from-image': 'You create a roleplay character from their portrait. Write the card description: start with an exact appearance paragraph taken from the picture (apparent age, build, face, hair, eyes, skin, distinctive marks, clothing, accessories, art style), so later pictures match it; then a plausible background, behaviour and speech patterns that fit what the picture shows. Give the character a fitting name unless one is visible or given. Never contradict what the picture shows.',
 
     'lore.structure': `You design World Info (lorebook) entries for SillyTavern. Entries trigger when a key appears in recent chat, so:
 - title is a short name for the entry (1-5 words: the place, person, faction or rule itself), not a sentence.
@@ -85,6 +86,7 @@ export const PROMPT_INFO = [
     { key: 'character.extend-field', group: 'Characters', label: 'Add to a field' },
     { key: 'character.greetings', group: 'Characters', label: 'Alternate greetings' },
     { key: 'character.critique', group: 'Characters', label: 'Critique & fix' },
+    { key: 'character.from-image', group: 'Characters', label: 'Character from a picture' },
     { key: 'lore.structure', group: 'Lore', label: 'World design (entries)' },
     { key: 'lore.extract', group: 'Lore', label: 'Lore from text' },
     { key: 'lore.contradictions', group: 'Lore', label: 'Contradictions and gaps' },
@@ -423,6 +425,17 @@ export const TASKS = {
         build: ({ card, lore = [], content }, p = P0) => ({
             system: system(p, 'character.critique', { content }),
             user: `Card:\n${cardDigest(card, { full: true })}\n${lore.length ? `\nLinked lore entries (${ABBREVIATED}):\n${loreDigest(lore)}` : ''}\n\nList strengths and issues. Use field names from: ${Object.keys(CARD_FIELDS).join(', ')}, alternate_greetings, lore.`,
+        }),
+    },
+    'character.from-image': {
+        label: 'Character from a picture',
+        area: 'characters',
+        schemaName: 'character_from_image',
+        maxTokens: 2500,
+        schema: { type: 'object', required: ['name', 'description'], properties: { name: { type: 'string', minLength: 1 }, description: { type: 'string', minLength: 1 } } },
+        build: ({ content }, p = P0) => ({
+            system: system(p, 'character.from-image', { content }),
+            user: 'The attached picture is this character\'s portrait. Return a name and the card description.',
         }),
     },
 

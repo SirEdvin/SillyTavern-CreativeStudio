@@ -115,6 +115,7 @@ details when you need them, then use **Export & use** to download a card or send
 | Improve a character already in SillyTavern | **Home → From SillyTavern**, or the feather in ST's character panel |
 | Generate from an idea | **Home → Generate with AI**; choose **Character & openings**, **Character & world**, or **Complete toolkit** |
 | Create someone new from two existing characters | **Characters → Remix two characters**; choose two imported cards, set optional locks and word minimums, then **Generate new character** |
+| Create a character from a picture | **Characters → From picture…**; pick a portrait. A vision model writes the name and description (appearance first); the picture becomes the avatar and the appearance reference for later pictures. Needs a Chat Completion creation profile with a vision-capable model. |
 | Write or revise a field with AI | **Ask AI** beside the field; enter your direction, check which earlier fields to include, and choose **Add to it**, **Rewrite**, or **3 takes** |
 | Set an accent or speech quirk | **Voice → Voice direction — highest priority**. This steers AI-written dialogue and openings ahead of other voice/style clues. |
 | Check or adjust a remix's length | Open the new character → **Remix · word counts**. Actual counts update as you edit; short fields are marked **Below minimum**. |

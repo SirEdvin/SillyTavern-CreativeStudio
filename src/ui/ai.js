@@ -31,7 +31,7 @@ export function useAiTask(store) {
             const profileId = store.get().settings?.creationProfileId ?? '';
             const result = await runStructured(stContext(), {
                 system, user, schema: taskSchema(task, args), schemaName: task.schemaName, profileId,
-                maxTokens: args?.maxTokens ?? task.maxTokens, signal: ac.signal, onStatus: setStatus,
+                maxTokens: args?.maxTokens ?? task.maxTokens, signal: ac.signal, onStatus: setStatus, images: args?.images,
             });
             setStatus(`Done in ${(result.meta.durationMs / 1000).toFixed(1)}s${result.meta.repaired.length ? ` (repaired: ${result.meta.repaired.join(', ')})` : ''}${result.meta.validationErrors?.length ? ` · ${result.meta.validationErrors.length} schema warning(s)` : ''}`);
             return { ...result, generation: { task: taskId, ...result.meta, prompt: `${system}\n---\n${user}` } };

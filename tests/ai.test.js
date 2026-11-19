@@ -96,6 +96,15 @@ test('profile route: CC sends json_schema override, extractData:false, reads raw
     assert.equal(r.value.candidates[0].name, 'C');
 });
 
+test('images ride as content parts on a Chat Completion profile and are refused elsewhere', async () => {
+    const profiles = [{ id: 'p1', name: 'Vision', api: 'openai' }, { id: 't1', name: 'Local', api: 'ooba' }];
+    const ctx = mockCtx({ profiles, responses: [{ choices: [{ message: { content: '{"candidates":[{"name":"V","score":1}]}' } }] }] });
+    await runStructured(ctx, { system: 's', user: 'u', schema: SCHEMA, profileId: 'p1', images: ['data:image/png;base64,AA'] });
+    assert.deepEqual(ctx.calls[0].msgs[1].content, [{ type: 'text', text: 'u' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AA' } }]);
+    for (const profileId of ['', 't1']) await assert.rejects(runStructured(ctx, { system: 's', user: 'u', profileId, images: ['data:x'] }), /Chat Completion creation profile/);
+    assert.equal(ctx.calls.length, 1);
+});
+
 test('profile route: Claude tool_use payload is read', async () => {
     const profiles = [{ id: 'p1', name: 'Claude', api: 'openai' }];
     const ctx = mockCtx({ profiles, responses: [{ content: [{ type: 'tool_use', input: { candidates: [{ name: 'T', score: 2 }] } }] }] });
