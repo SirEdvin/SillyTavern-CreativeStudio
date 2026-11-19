@@ -82,13 +82,13 @@ export function listProfiles(ctx) {
     return profiles.map(p => ({ id: p.id, name: p.name, api: p.api, model: p.model ?? '', mode: p.mode, preset: p.preset ?? '' }));
 }
 
-function buildMessages({ system, user, schema, schemaName, examples }) {
+function buildMessages({ system, user, schema, schemaName, examples, images = [] }) {
     const jsonRules = schema
         ? `\n\nRespond with ONE JSON value only — no prose before or after, no code fences. It must match this JSON Schema (named "${schemaName}"):\n${schemaToPrompt(schema)}${examples ? `\n\nExample of the expected shape:\n${JSON.stringify(examples)}` : ''}`
         : '';
     return [
         { role: 'system', content: `${system}${jsonRules}` },
-        { role: 'user', content: user },
+        { role: 'user', content: images.length ? [{ type: 'text', text: user }, ...images.map(url => ({ type: 'image_url', image_url: { url } }))] : user },
     ];
 }
 
@@ -147,6 +147,7 @@ export async function runChat(ctx, { messages, profileId = '', maxTokens = 400, 
  * @param {(s: string) => void} [req.onStatus]
  * @param {boolean} [req.repair] one repair round-trip when output is invalid
  * @param {number} [req.timeoutMs] give up on a single call after this long (0 = never)
+ * @param {string[]} [req.images] image data URLs sent with the user message (Chat Completion profiles only)
  * @returns {Promise<{ value: any, raw: string, meta: object }>}
  */
 export async function runStructured(ctx, req) {
@@ -154,6 +155,8 @@ export async function runStructured(ctx, req) {
     const timeoutMs = req.timeoutMs ?? timeoutFor(maxTokens);
     const route = describeRoute(ctx, profileId);
     if (!route.ok && route.mode === 'profile') throw new AiError(route.label, { meta: route });
+    // ST's generateRaw and Text Completion flatten message content to strings, so pictures only survive a CC profile.
+    if (req.images?.length && !(route.mode === 'profile' && route.schemaEnforced)) throw new AiError('Reading a picture needs a Chat Completion creation profile with a vision model. Choose one in “Creation model”.', { meta: route });
     const messages = buildMessages(req);
     const promptHash = hashString(JSON.stringify(messages));
     const started = Date.now();
